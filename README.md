@@ -60,40 +60,7 @@ This project implements a **production-grade, end-to-end big data pipeline** on 
 
 ## 2. Architecture
 
-```mermaid
-flowchart LR
-    subgraph ROW1["Ingestion & Streaming"]
-        direction LR
-        A(["Chicago\nOpen Data\n~8.5M records"]):::source
-        B(["Download\nScript"]):::step
-        C(["Kafka\nProducer"]):::kafka
-        D(["Kafka\nBroker"]):::kafka
-        E(["Spark\nStreaming"]):::spark
-        A --> B --> C --> D --> E
-    end
-
-    subgraph ROW2["Lakehouse  →  Intelligence"]
-        direction LR
-        F(["Bronze\nRaw layer"]):::bronze
-        G(["Silver\nCleaned"]):::silver
-        H(["Gold\nFeatures"]):::gold
-        I(["ML +\nMLflow"]):::ml
-        J(["Dashboard\n& Report"]):::output
-        F -->|"job 02"| G -->|"job 03"| H -->|"job 04-05"| I --> J
-    end
-
-    E -->|"Structured\nStreaming"| F
-
-    classDef source  fill:#1e3a5f,stroke:#4a9eff,color:#e8f4ff
-    classDef step    fill:#1a1a2e,stroke:#888,color:#ccc
-    classDef kafka   fill:#231f20,stroke:#f5a623,color:#f5d78e
-    classDef spark   fill:#3d1a00,stroke:#e25a1c,color:#ffd4b8
-    classDef bronze  fill:#3b2200,stroke:#cd7f32,color:#f5d5a0
-    classDef silver  fill:#252535,stroke:#a8a9ad,color:#e0e0e0
-    classDef gold    fill:#2d2000,stroke:#ffd700,color:#fff5b8
-    classDef ml      fill:#1a0030,stroke:#9b59b6,color:#e8d5ff
-    classDef output  fill:#002d1a,stroke:#27ae60,color:#d5ffe8
-```
+<img width="1536" height="1024" alt="Project Architecture" src="[https://github.com/user-attachments/assets/2a6334f9-863f-4bd2-a56f-923e42f4711e](https://github.com/user-attachments/assets/2e932b1c-1282-485b-9a9e-f499ce6557f1)" />
 
 ---
 

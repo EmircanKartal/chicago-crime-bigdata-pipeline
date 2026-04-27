@@ -1,0 +1,9 @@
+data/
+delta/
+mlruns/
+__pycache__/
+.ipynb_checkpoints/
+.env
+*.log
+*.pyc
+.DS_Store

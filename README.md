@@ -61,47 +61,38 @@ This project implements a **production-grade, end-to-end big data pipeline** on 
 ## 2. Architecture
 
 ```mermaid
-flowchart TD
-    subgraph SRC["Data Source"]
-        A["Chicago Open Data\nSODA API · ijzp-q8t2\n~8.5M records"]
+flowchart LR
+    subgraph ROW1["Ingestion & Streaming"]
+        direction LR
+        A(["Chicago\nOpen Data\n~8.5M records"]):::source
+        B(["Download\nScript"]):::step
+        C(["Kafka\nProducer"]):::kafka
+        D(["Kafka\nBroker"]):::kafka
+        E(["Spark\nStreaming"]):::spark
+        A --> B --> C --> D --> E
     end
 
-    subgraph INGEST["Ingestion"]
-        B["download_chicago_data.py\npaginated $limit / $offset"]
-        C["data/raw/crimes_sample.csv"]
-        B --> C
+    subgraph ROW2["Lakehouse  →  Intelligence"]
+        direction LR
+        F(["Bronze\nRaw layer"]):::bronze
+        G(["Silver\nCleaned"]):::silver
+        H(["Gold\nFeatures"]):::gold
+        I(["ML +\nMLflow"]):::ml
+        J(["Dashboard\n& Report"]):::output
+        F -->|"job 02"| G -->|"job 03"| H -->|"job 04-05"| I --> J
     end
 
-    subgraph PRODUCER["Kafka Producer  —  services/producer/"]
-        D["producer.py\nReads CSV row-by-row\nEnriches: ingest_ts · synthetic_user_id\nRate: PRODUCE_RATE_PER_SEC=10"]
-    end
+    E -->|"Structured\nStreaming"| F
 
-    subgraph KAFKA["Apache Kafka"]
-        E["Topic: chicago_crimes_raw\nJSON messages"]
-    end
-
-    subgraph DELTA["Spark Structured Streaming  —  jobs/"]
-        F["BRONZE  delta/bronze/\nRaw Kafka payload preserved\nkafka_key · offset · ingest_ts · raw_json"]
-        G["SILVER  delta/silver/\nJSON parsed · types cast · nulls dropped\nDedup by id · timestamp conversion"]
-        H["GOLD  delta/gold/\nEDA aggregates · ml_features\nmodel_predictions"]
-        F -->|"job 02"| G
-        G -->|"job 03"| H
-    end
-
-    subgraph ML["Machine Learning  —  jobs/05_train_models_mlflow.py"]
-        I["Label: primary_type_top10\nLogistic Regression · Decision Tree\nRandom Forest · GBT · Naive Bayes\nMLflow: accuracy · F1 · AUC · artifacts"]
-    end
-
-    subgraph OUT["Output"]
-        J["Dashboard + Technical Report\ndocs/screenshots · dashboard/figures"]
-    end
-
-    A --> B
-    C --> D
-    D --> E
-    E --> F
-    H --> I
-    I --> J
+    classDef source  fill:#1e3a5f,stroke:#4a9eff,color:#e8f4ff
+    classDef step    fill:#1a1a2e,stroke:#888,color:#ccc
+    classDef kafka   fill:#231f20,stroke:#f5a623,color:#f5d78e
+    classDef spark   fill:#3d1a00,stroke:#e25a1c,color:#ffd4b8
+    classDef bronze  fill:#3b2200,stroke:#cd7f32,color:#f5d5a0
+    classDef silver  fill:#252535,stroke:#a8a9ad,color:#e0e0e0
+    classDef gold    fill:#2d2000,stroke:#ffd700,color:#fff5b8
+    classDef ml      fill:#1a0030,stroke:#9b59b6,color:#e8d5ff
+    classDef output  fill:#002d1a,stroke:#27ae60,color:#d5ffe8
 ```
 
 ---
@@ -356,52 +347,17 @@ Dashboard figures generated in `notebooks/06_dashboard_figures.ipynb`.
 
 ## 11. Team Contributions
 
-<table>
-<tr>
-<td align="center" width="33%">
-<a href="https://github.com/EmircanKartal">
-<strong>Emircan Kartal</strong>
-</a>
-<br/>
-<em>Infrastructure & Integration</em>
-<br/><br/>
-• Docker Compose setup & all service configs<br/>
-• Kafka Producer implementation<br/>
-• Data download script (SODA API pagination)<br/>
-• Repository structure & CI hygiene<br/>
-• End-to-end demo orchestration<br/>
-• README & architecture docs
-</td>
-<td align="center" width="33%">
-<a href="https://github.com/berfinm">
-<strong>Meryem Berfin Kenar</strong>
-</a>
-<br/>
-<em>Streaming & Analytics</em>
-<br/><br/>
-• Spark Structured Streaming pipeline<br/>
-• Bronze → Silver → Gold Delta jobs<br/>
-• EDA notebooks & visualizations<br/>
-• Gold aggregate table design<br/>
-• Dashboard EDA figures<br/>
-• Technical report (architecture section)
-</td>
-<td align="center" width="33%">
-<a href="https://github.com/kagangur">
-<strong>Kağan Gür</strong>
-</a>
-<br/>
-<em>ML & Experiment Tracking</em>
-<br/><br/>
-• Feature engineering pipeline<br/>
-• 5 ML model implementations<br/>
-• MLflow experiment logging<br/>
-• Model comparison & metrics<br/>
-• Dashboard ML figures<br/>
-• Presentation — model results section
-</td>
-</tr>
-</table>
+| | | |
+|:---:|:---:|:---:|
+| <a href="https://github.com/EmircanKartal"><img src="https://github.com/EmircanKartal.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/berfinm"><img src="https://github.com/berfinm.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/kagangur"><img src="https://github.com/kagangur.png" width="80" style="border-radius:50%"/></a> |
+| **[Emircan Kartal](https://github.com/EmircanKartal)** | **[Meryem Berfin Kenar](https://github.com/berfinm)** | **[Kağan Gür](https://github.com/kagangur)** |
+| *Infrastructure & Integration* | *Streaming & Analytics* | *ML & Experiment Tracking* |
+| Docker Compose & service configs | Spark Structured Streaming pipeline | Feature engineering pipeline |
+| Kafka Producer implementation | Bronze → Silver → Gold Delta jobs | 5 ML model implementations |
+| Data download (SODA API pagination) | EDA notebooks & visualizations | MLflow experiment logging |
+| Repository structure & CI hygiene | Gold aggregate table design | Model comparison & metrics |
+| End-to-end demo orchestration | Dashboard EDA figures | Dashboard ML figures |
+| README & architecture docs | Technical report (architecture) | Presentation — model results |
 
 ---
 

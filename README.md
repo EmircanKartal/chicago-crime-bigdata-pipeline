@@ -60,7 +60,7 @@ This project implements a **production-grade, end-to-end big data pipeline** on 
 
 ## 2. Architecture
 
-<img width="1536" height="1024" alt="Project Architecture" src="[https://github.com/user-attachments/assets/2a6334f9-863f-4bd2-a56f-923e42f4711e](https://github.com/user-attachments/assets/2e932b1c-1282-485b-9a9e-f499ce6557f1)" />
+<img width="1536" height="1024" alt="Project Architecture" src="https://github.com/user-attachments/assets/064e8dd6-f6cf-45d3-ae96-658a0e997795" />
 
 ---
 

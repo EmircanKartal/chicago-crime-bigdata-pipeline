@@ -1,3 +1,13 @@
-FROM bitnami/spark:3.5
+FROM apache/spark:3.5.1
+
 USER root
-RUN pip install --no-cache-dir delta-spark==3.0.0 mlflow==2.11.1
+
+RUN pip install --no-cache-dir \
+    pandas \
+    numpy \
+    matplotlib \
+    scikit-learn \
+    mlflow \
+    delta-spark
+
+USER spark

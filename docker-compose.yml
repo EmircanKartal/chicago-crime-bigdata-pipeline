@@ -85,6 +85,10 @@ services:
       - ./services/producer/app:/app/app
     environment:
       KAFKA_BOOTSTRAP_SERVERS: chicago_kafka:9092
+      KAFKA_TOPIC: chicago_crimes_raw
+      CSV_PATH: /app/data/raw/chicago_crimes_sample.csv
+      PRODUCE_RATE_PER_SEC: 10
+      MAX_MESSAGES: 1000
     command: ["tail", "-f", "/dev/null"]
 
   # MLflow: experiment tracking server for ML model runs and artifacts

@@ -43,8 +43,7 @@ def main():
         .withColumn("longitude", trim(col("longitude")).cast("double"))
         .withColumn("x_coordinate", trim(col("x_coordinate")).cast("double"))
         .withColumn("y_coordinate", trim(col("y_coordinate")).cast("double"))
-        .withColumn("crime_timestamp", to_timestamp(col("date"), "MM/dd/yyyy hh:mm:ss a"))
-        .withColumn("silver_loaded_at", current_timestamp())
+        .withColumn("crime_timestamp", to_timestamp(col("date"), "yyyy-MM-dd'T'HH:mm:ss.SSS"))        .withColumn("silver_loaded_at", current_timestamp())
     )
 
     before_count = silver_df.count()

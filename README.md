@@ -229,8 +229,9 @@ Key findings from `notebooks/03_eda.ipynb`:
 - **Time of day:** 12:00 and 20:00 show dual daily peaks across most crime types
 - **Domestic crimes:** Concentrated in residential community areas; strong seasonal signal
 
-EDA visualizations (see `dashboard/figures/`):
+EDA visualizations from `notebooks/03_eda.ipynb` use a separate folder per source: **`dashboard/figures/from-csv/`** (CSV), **`dashboard/figures/from-delta-lake/silver/`** (Delta Silver), **`dashboard/figures/from-delta-lake/gold/`** (Delta Gold). Example (CSV tree):
 ```
+dashboard/figures/from-csv/
 ├── yearly_trend.png
 ├── hourly_distribution.png
 ├── top10_crime_types.png
@@ -240,6 +241,7 @@ EDA visualizations (see `dashboard/figures/`):
 ├── weekday_hour_heatmap.png
 └── missing_values.png
 ```
+(Additional EDA PNGs such as `daily_trend.png` and numeric plots live in the same folder after a full run.)
 
 ---
 
@@ -305,8 +307,8 @@ Dashboard figures generated in `notebooks/06_dashboard_figures.ipynb`.
 | Confusion matrix (best model) | `dashboard/figures/confusion_matrix.png` |
 | Feature importance | `dashboard/figures/feature_importance.png` |
 | ROC curves (OVR) | `dashboard/figures/roc_curves.png` |
-| Crime trend (2001–2024) | `dashboard/figures/yearly_trend.png` |
-| Geographic density | `dashboard/figures/district_heatmap.png` |
+| Crime trend (2001–2024) | `dashboard/figures/from-csv/yearly_trend.png` (EDA); dashboard notebook may regenerate elsewhere |
+| Geographic density | `dashboard/figures/from-csv/district_heatmap.png` (EDA) |
 
 > Screenshots are in `docs/screenshots/` — see the full visual summary there.
 

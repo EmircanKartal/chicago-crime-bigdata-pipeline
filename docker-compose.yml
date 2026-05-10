@@ -50,6 +50,7 @@ services:
       - ./configs:/app/configs
       - ./reports:/app/reports
       - ./mlruns:/app/mlruns
+      - ./dashboard:/app/dashboard
 
   # Spark Worker: executes Spark tasks delegated by the master
 

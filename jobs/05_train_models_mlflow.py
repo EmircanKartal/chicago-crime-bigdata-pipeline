@@ -19,6 +19,7 @@ from pyspark.ml.classification import (
     RandomForestClassifier,
     GBTClassifier,
     NaiveBayes,
+    OneVsRest,
 )
 from pyspark.ml.evaluation import (
     MulticlassClassificationEvaluator,
@@ -38,15 +39,30 @@ spark = (
 )
 spark.sparkContext.setLogLevel("WARN")
 
-FEATURE_PATH    = "/app/delta/gold/ml_features"
-REPORTS_DIR     = Path("/app/reports")
-MLFLOW_URI      = os.environ.get("MLFLOW_TRACKING_URI", "file:///app/mlruns")
-EXPERIMENT_NAME = "chicago_crime_arrest_classification"
+FEATURE_PATH = "/app/delta/gold/ml_features"
+MLFLOW_URI   = os.environ.get("MLFLOW_TRACKING_URI", "file:///app/mlruns")
+
+# Experiment versioning — set EXP_ID to keep runs separate, e.g.:
+#   EXP_ID=exp01_arrest_2m     → reports/exp01_arrest_2m/
+#   EXP_ID=exp02_crime_group   → reports/exp02_crime_group/
+#   EXP_ID=exp03_domestic      → reports/exp03_domestic/
+EXP_ID       = os.environ.get("EXP_ID", "exp01_arrest_2m")
+REPORTS_DIR  = Path(f"/app/reports/{EXP_ID}")
+
+# Target variable (arrest | crime_group | domestic)
+PREDICT_TARGET = os.environ.get("PREDICT_TARGET", "arrest").strip().lower()
+
+EXPERIMENT_MAP = {
+    "arrest":      f"exp01_chicago_arrest_classification",
+    "crime_group": f"exp02_chicago_crime_group",
+    "domestic":    f"exp03_chicago_domestic_prediction",
+}
+EXPERIMENT_NAME = EXPERIMENT_MAP.get(PREDICT_TARGET, f"{EXP_ID}_{PREDICT_TARGET}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def evaluate_model(predictions):
+def evaluate_model(predictions, is_binary=True):
     metrics = {}
     for key, mn in [
         ("accuracy",  "accuracy"),
@@ -58,15 +74,20 @@ def evaluate_model(predictions):
             labelCol="label", predictionCol="prediction", metricName=mn
         ).evaluate(predictions)
 
-    metrics["auc_roc"] = BinaryClassificationEvaluator(
-        labelCol="label", rawPredictionCol="rawPrediction",
-        metricName="areaUnderROC"
-    ).evaluate(predictions)
-
-    # Recall specifically for arrested class (minority)
-    tp = predictions.filter((col("label") == 1.0) & (col("prediction") == 1.0)).count()
-    fn = predictions.filter((col("label") == 1.0) & (col("prediction") == 0.0)).count()
-    metrics["recall_arrested"] = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    if is_binary:
+        try:
+            metrics["auc_roc"] = BinaryClassificationEvaluator(
+                labelCol="label", rawPredictionCol="rawPrediction",
+                metricName="areaUnderROC"
+            ).evaluate(predictions)
+        except Exception:
+            metrics["auc_roc"] = 0.0
+        tp = predictions.filter((col("label")==1.0)&(col("prediction")==1.0)).count()
+        fn = predictions.filter((col("label")==1.0)&(col("prediction")==0.0)).count()
+        metrics["recall_arrested"] = tp/(tp+fn) if (tp+fn) > 0 else 0.0
+    else:
+        metrics["auc_roc"] = 0.0        # not defined for multiclass
+        metrics["recall_arrested"] = 0.0
 
     return metrics
 
@@ -109,7 +130,11 @@ def extract_feature_importance(pipeline_model, feature_cols):
 
 def main():
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Reading ML features: {FEATURE_PATH}")
+    print(f"Reading ML features : {FEATURE_PATH}")
+    print(f"Predict target      : {PREDICT_TARGET}")
+    print(f"Experiment ID       : {EXP_ID}")
+    print(f"MLflow experiment   : {EXPERIMENT_NAME}")
+    print(f"Reports dir         : {REPORTS_DIR}")
 
     df = (
         spark.read.format("delta").load(FEATURE_PATH)
@@ -118,10 +143,29 @@ def main():
         .fillna(0.0, subset=["lat_grid", "lon_grid_abs", "district", "beat", "community_area"])
     )
 
+    # ── Build label based on target ───────────────────────────────────────
+    if PREDICT_TARGET == "crime_group":
+        # Drop existing 'label' (arrest) before creating crime_group label
+        df = df.drop("label")
+        label_indexer = StringIndexer(
+            inputCol="crime_group", outputCol="label",
+            handleInvalid="keep", stringOrderType="frequencyDesc"
+        )
+        df = label_indexer.fit(df).transform(df)
+        is_binary = False
+        print("Crime group label mapping:")
+        df.groupBy("crime_group", "label").count().orderBy("label").show()
+    elif PREDICT_TARGET == "domestic":
+        df = df.drop("label")
+        df = df.withColumn("label", col("domestic_numeric").cast("double"))
+        is_binary = True
+    else:  # arrest (default) — label column already exists
+        is_binary = True
+
     total = df.count()
     pos   = df.filter(col("label") == 1.0).count()
     neg   = total - pos
-    print(f"Rows: {total:,}  |  Arrested: {pos:,} ({100*pos/total:.1f}%)  |  Not: {neg:,}")
+    print(f"Rows: {total:,}  |  Positive: {pos:,} ({100*pos/total:.1f}%)  |  Negative: {neg:,}")
 
     # Class-weight balancing (fixes low recall on arrested=minority class)
     weight_pos = neg / total
@@ -158,23 +202,31 @@ def main():
     print(f"Features ({len(feature_cols)}): {feature_cols}")
 
     # ── Models ────────────────────────────────────────────────────────────
+    # GBT only supports binary — wrap in OneVsRest for multiclass targets
+    gbt_base = GBTClassifier(
+        featuresCol="features", labelCol="label",
+        maxIter=30, maxDepth=5, stepSize=0.1, seed=42,
+    )
+    gbt_model = (gbt_base if is_binary
+                 else OneVsRest(classifier=gbt_base, labelCol="label",
+                                featuresCol="features"))
+
     models = {
         "LogisticRegression": LogisticRegression(
-            featuresCol="features", labelCol="label", weightCol="classWeight",
+            featuresCol="features", labelCol="label",
             maxIter=100, regParam=0.01, elasticNetParam=0.1,
+            **({"weightCol": "classWeight"} if is_binary else {}),
         ),
         "DecisionTreeClassifier": DecisionTreeClassifier(
-            featuresCol="features", labelCol="label", weightCol="classWeight",
-            maxDepth=10, seed=42,
+            featuresCol="features", labelCol="label", maxDepth=10, seed=42,
+            **({"weightCol": "classWeight"} if is_binary else {}),
         ),
         "RandomForestClassifier": RandomForestClassifier(
-            featuresCol="features", labelCol="label", weightCol="classWeight",
-            numTrees=50, maxDepth=8, seed=42,
-        ),
-        "GBTClassifier": GBTClassifier(
             featuresCol="features", labelCol="label",
-            maxIter=30, maxDepth=5, stepSize=0.1, seed=42,
+            numTrees=50, maxDepth=8, seed=42,
+            **({"weightCol": "classWeight"} if is_binary else {}),
         ),
+        "GBTClassifier": gbt_model,
         "NaiveBayes": NaiveBayes(
             featuresCol="features", labelCol="label",
             smoothing=1.0, modelType="multinomial",
@@ -199,7 +251,7 @@ def main():
             try:
                 pipe_model  = pipeline.fit(train_df)
                 predictions = pipe_model.transform(test_df)
-                metrics     = evaluate_model(predictions)
+                metrics     = evaluate_model(predictions, is_binary=is_binary)
             except Exception as e:
                 print(f"   FAILED: {e}")
                 mlflow.log_param("error", str(e)[:500])

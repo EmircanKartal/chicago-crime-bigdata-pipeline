@@ -1,22 +1,16 @@
 # Owner: Berfin
-# Branch: feature/step5-step6-ml
-# Purpose: Train 5 classification models and track all runs in MLflow
-# Input:  delta/gold/ml_features/
-# Output:
-#   - MLflow runs
-#   - reports/ml_model_metrics.csv
-#   - reports/confusion_matrix_best_model.csv
-#   - reports/feature_importance_best_model.csv
-#
-# Target:
-#   Arrest prediction, binary classification
+# Purpose: Train 5 classifiers, track in MLflow
+# Input:  delta/gold/ml_features  (arrest binary target)
+# Output: reports/ml_model_metrics.csv
+#         reports/confusion_matrix_best_model.csv
+#         reports/feature_importance_best_model.csv
 
 import csv
 import os
 from pathlib import Path
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col, when, lit
 
 from pyspark.ml import Pipeline
 from pyspark.ml.classification import (
@@ -35,308 +29,228 @@ from pyspark.ml.feature import StringIndexer, VectorAssembler
 import mlflow
 import mlflow.spark
 
-
 spark = (
     SparkSession.builder
     .appName("TrainModelsMLflow")
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
     .getOrCreate()
 )
-
 spark.sparkContext.setLogLevel("WARN")
 
-FEATURE_PATH = "delta/gold/ml_features"
-REPORTS_DIR = Path("reports")
-
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+FEATURE_PATH    = "/app/delta/gold/ml_features"
+REPORTS_DIR     = Path("/app/reports")
+MLFLOW_URI      = os.environ.get("MLFLOW_TRACKING_URI", "file:///app/mlruns")
 EXPERIMENT_NAME = "chicago_crime_arrest_classification"
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def evaluate_model(predictions):
-    """
-    Calculates classification metrics required in the project:
-    accuracy, f1-score, precision, recall and AUC-ROC.
-    """
     metrics = {}
+    for key, mn in [
+        ("accuracy",  "accuracy"),
+        ("f1",        "f1"),
+        ("precision", "weightedPrecision"),
+        ("recall",    "weightedRecall"),
+    ]:
+        metrics[key] = MulticlassClassificationEvaluator(
+            labelCol="label", predictionCol="prediction", metricName=mn
+        ).evaluate(predictions)
 
-    evaluators = {
-        "accuracy": MulticlassClassificationEvaluator(
-            labelCol="label", predictionCol="prediction", metricName="accuracy"
-        ),
-        "f1": MulticlassClassificationEvaluator(
-            labelCol="label", predictionCol="prediction", metricName="f1"
-        ),
-        "precision": MulticlassClassificationEvaluator(
-            labelCol="label", predictionCol="prediction", metricName="weightedPrecision"
-        ),
-        "recall": MulticlassClassificationEvaluator(
-            labelCol="label", predictionCol="prediction", metricName="weightedRecall"
-        ),
-    }
+    metrics["auc_roc"] = BinaryClassificationEvaluator(
+        labelCol="label", rawPredictionCol="rawPrediction",
+        metricName="areaUnderROC"
+    ).evaluate(predictions)
 
-    for metric_name, evaluator in evaluators.items():
-        metrics[metric_name] = evaluator.evaluate(predictions)
-
-    auc_evaluator = BinaryClassificationEvaluator(
-        labelCol="label",
-        rawPredictionCol="rawPrediction",
-        metricName="areaUnderROC",
-    )
-    metrics["auc_roc"] = auc_evaluator.evaluate(predictions)
+    # Recall specifically for arrested class (minority)
+    tp = predictions.filter((col("label") == 1.0) & (col("prediction") == 1.0)).count()
+    fn = predictions.filter((col("label") == 1.0) & (col("prediction") == 0.0)).count()
+    metrics["recall_arrested"] = tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
     return metrics
 
 
 def get_confusion_matrix(predictions):
-    """
-    Returns confusion matrix rows as dictionaries.
-    """
     rows = (
-        predictions
-        .groupBy("label", "prediction")
-        .count()
-        .orderBy("label", "prediction")
-        .collect()
+        predictions.groupBy("label", "prediction")
+        .count().orderBy("label", "prediction").collect()
     )
-
-    return [
-        {
-            "label": float(row["label"]),
-            "prediction": float(row["prediction"]),
-            "count": int(row["count"]),
-        }
-        for row in rows
-    ]
+    return [{"label": float(r["label"]),
+             "prediction": float(r["prediction"]),
+             "count": int(r["count"])} for r in rows]
 
 
 def save_csv(path, rows, fieldnames):
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
 
 
 def extract_feature_importance(pipeline_model, feature_cols):
-    """
-    Extracts feature importance or coefficient-based importance where possible.
-    Tree models expose featureImportances.
-    Logistic Regression exposes coefficients.
-    Naive Bayes does not provide direct feature importance in the same way.
-    """
-    model_stage = pipeline_model.stages[-1]
-    model_name = model_stage.__class__.__name__
-
-    importances = []
-
-    if hasattr(model_stage, "featureImportances"):
-        values = model_stage.featureImportances.toArray().tolist()
-        importances = [
-            {"feature": feature_cols[i], "importance": float(values[i])}
-            for i in range(len(feature_cols))
-        ]
-
-    elif hasattr(model_stage, "coefficients"):
-        values = model_stage.coefficients.toArray().tolist()
-        importances = [
-            {"feature": feature_cols[i], "importance": float(abs(values[i]))}
-            for i in range(len(feature_cols))
-        ]
-
+    stage = pipeline_model.stages[-1]
+    name  = stage.__class__.__name__
+    if hasattr(stage, "featureImportances"):
+        vals = stage.featureImportances.toArray().tolist()
+        imp  = [{"feature": feature_cols[i], "importance": float(vals[i])}
+                for i in range(len(feature_cols))]
+    elif hasattr(stage, "coefficients"):
+        vals = stage.coefficients.toArray().tolist()
+        imp  = [{"feature": feature_cols[i], "importance": float(abs(vals[i]))}
+                for i in range(len(feature_cols))]
     else:
-        importances = [
-            {"feature": feature, "importance": 0.0}
-            for feature in feature_cols
-        ]
+        imp = [{"feature": f, "importance": 0.0} for f in feature_cols]
+    return name, sorted(imp, key=lambda x: x["importance"], reverse=True)
 
-    importances = sorted(importances, key=lambda x: x["importance"], reverse=True)
-    return model_name, importances
 
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Reading ML features: {FEATURE_PATH}")
 
-    print(f"Reading ML features from: {FEATURE_PATH}")
-    df = spark.read.format("delta").load(FEATURE_PATH)
-
-    print("ML feature schema:")
-    df.printSchema()
-
-    df = df.dropna(subset=["label"])
-
-    train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
-
-    print(f"Train count: {train_df.count()}")
-    print(f"Test count : {test_df.count()}")
-
-    categorical_cols = [
-        "primary_type_group",
-        "location_group",
-        "district_group",
-    ]
-
-    numeric_cols = [
-        "hour",
-        "day_of_week",
-        "month",
-        "is_weekend",
-        "is_night",
-        "domestic_numeric",
-        "lat_grid",
-        "lon_grid_abs",
-        "geo_available",
-    ]
-
-    indexers = [
-        StringIndexer(
-            inputCol=c,
-            outputCol=f"{c}_idx",
-            handleInvalid="keep"
-        )
-        for c in categorical_cols
-    ]
-
-    indexed_cols = [f"{c}_idx" for c in categorical_cols]
-
-    feature_cols = numeric_cols + indexed_cols
-
-    assembler = VectorAssembler(
-        inputCols=feature_cols,
-        outputCol="features",
-        handleInvalid="keep",
+    df = (
+        spark.read.format("delta").load(FEATURE_PATH)
+        .dropna(subset=["label"])
+        # Fill any remaining NaN in numeric cols — lat/lon null for ~1.4% of records
+        .fillna(0.0, subset=["lat_grid", "lon_grid_abs", "district", "beat", "community_area"])
     )
 
+    total = df.count()
+    pos   = df.filter(col("label") == 1.0).count()
+    neg   = total - pos
+    print(f"Rows: {total:,}  |  Arrested: {pos:,} ({100*pos/total:.1f}%)  |  Not: {neg:,}")
+
+    # Class-weight balancing (fixes low recall on arrested=minority class)
+    weight_pos = neg / total
+    weight_neg = pos / total
+    df = df.withColumn(
+        "classWeight",
+        when(col("label") == 1.0, lit(float(weight_pos)))
+        .otherwise(lit(float(weight_neg)))
+    )
+
+    train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+    print(f"Train: {train_df.count():,}  |  Test: {test_df.count():,}")
+
+    # ── Feature columns ───────────────────────────────────────────────────
+    categorical_cols = [
+        "primary_type_group",   # strongest predictor (narcotics vs theft arrest rate)
+        "crime_group",          # VIOLENT/PROPERTY/OTHER
+        "location_group",       # STREET/RESIDENCE/etc
+    ]
+    numeric_cols = [
+        "hour", "day_of_week", "month", "is_weekend", "is_night",
+        "domestic_numeric",
+        "district", "beat", "community_area",
+        "lat_grid", "lon_grid_abs",
+    ]
+
+    indexers     = [StringIndexer(inputCol=c, outputCol=f"{c}_idx", handleInvalid="keep")
+                    for c in categorical_cols]
+    indexed_cols = [f"{c}_idx" for c in categorical_cols]
+    feature_cols = numeric_cols + indexed_cols
+    assembler    = VectorAssembler(inputCols=feature_cols, outputCol="features",
+                                   handleInvalid="keep")
+
+    print(f"Features ({len(feature_cols)}): {feature_cols}")
+
+    # ── Models ────────────────────────────────────────────────────────────
     models = {
         "LogisticRegression": LogisticRegression(
-            featuresCol="features",
-            labelCol="label",
-            maxIter=30,
-            regParam=0.01,
+            featuresCol="features", labelCol="label", weightCol="classWeight",
+            maxIter=100, regParam=0.01, elasticNetParam=0.1,
         ),
         "DecisionTreeClassifier": DecisionTreeClassifier(
-            featuresCol="features",
-            labelCol="label",
-            maxDepth=8,
-            seed=42,
+            featuresCol="features", labelCol="label", weightCol="classWeight",
+            maxDepth=10, seed=42,
         ),
         "RandomForestClassifier": RandomForestClassifier(
-            featuresCol="features",
-            labelCol="label",
-            numTrees=50,
-            maxDepth=8,
-            seed=42,
+            featuresCol="features", labelCol="label", weightCol="classWeight",
+            numTrees=50, maxDepth=8, seed=42,
         ),
         "GBTClassifier": GBTClassifier(
-            featuresCol="features",
-            labelCol="label",
-            maxIter=30,
-            maxDepth=5,
-            seed=42,
+            featuresCol="features", labelCol="label",
+            maxIter=30, maxDepth=5, stepSize=0.1, seed=42,
         ),
         "NaiveBayes": NaiveBayes(
-            featuresCol="features",
-            labelCol="label",
-            smoothing=1.0,
-            modelType="multinomial",
+            featuresCol="features", labelCol="label",
+            smoothing=1.0, modelType="multinomial",
         ),
     }
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    # ── MLflow loop ───────────────────────────────────────────────────────
+    mlflow.set_tracking_uri(MLFLOW_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    all_metrics = []
-    best_model_name = None
-    best_auc = -1.0
+    all_metrics      = []
+    best_model_name  = None
+    best_auc         = -1.0
     best_predictions = None
-    best_pipeline_model = None
+    best_pipeline    = None
 
     for model_name, model in models.items():
-        print(f"\nTraining model: {model_name}")
-
+        print(f"\n── Training: {model_name}")
         pipeline = Pipeline(stages=indexers + [assembler, model])
 
         with mlflow.start_run(run_name=model_name):
-            pipeline_model = pipeline.fit(train_df)
-            predictions = pipeline_model.transform(test_df)
-
-            metrics = evaluate_model(predictions)
-
-            params = {}
             try:
-                params = model.extractParamMap()
-                params = {
-                    param.name: value
-                    for param, value in params.items()
-                    if isinstance(value, (int, float, str, bool))
-                }
-            except Exception:
-                params = {}
+                pipe_model  = pipeline.fit(train_df)
+                predictions = pipe_model.transform(test_df)
+                metrics     = evaluate_model(predictions)
+            except Exception as e:
+                print(f"   FAILED: {e}")
+                mlflow.log_param("error", str(e)[:500])
+                continue
 
-            mlflow.log_param("model_name", model_name)
-            mlflow.log_param("target", "arrest")
-            mlflow.log_param("feature_count", len(feature_cols))
-            mlflow.log_param("train_count", train_df.count())
-            mlflow.log_param("test_count", test_df.count())
-
-            for key, value in params.items():
-                mlflow.log_param(key, value)
-
-            for metric_name, metric_value in metrics.items():
-                mlflow.log_metric(metric_name, metric_value)
-
-            mlflow.spark.log_model(pipeline_model, artifact_path=f"{model_name}_spark_model")
+            # Log to MLflow
+            mlflow.log_param("model_name",       model_name)
+            mlflow.log_param("target",           "arrest")
+            mlflow.log_param("feature_count",    len(feature_cols))
+            mlflow.log_param("train_rows",       train_df.count())
+            mlflow.log_param("test_rows",        test_df.count())
+            mlflow.log_param("class_balanced",   True)
+            mlflow.log_param("weight_arrested",  round(weight_pos, 4))
+            for k, v in metrics.items():
+                mlflow.log_metric(k, v)
+            mlflow.spark.log_model(pipe_model, artifact_path=f"{model_name}_model")
 
             row = {"model": model_name}
             row.update(metrics)
             all_metrics.append(row)
 
-            print(f"{model_name} metrics:")
-            for metric_name, metric_value in metrics.items():
-                print(f"  {metric_name}: {metric_value:.4f}")
+            print(f"   accuracy={metrics['accuracy']:.4f}  "
+                  f"f1={metrics['f1']:.4f}  "
+                  f"auc_roc={metrics['auc_roc']:.4f}  "
+                  f"recall_arrested={metrics['recall_arrested']:.4f}")
 
             if metrics["auc_roc"] > best_auc:
-                best_auc = metrics["auc_roc"]
+                best_auc        = metrics["auc_roc"]
                 best_model_name = model_name
-                best_predictions = predictions
-                best_pipeline_model = pipeline_model
+                best_predictions= predictions
+                best_pipeline   = pipe_model
 
-    metrics_path = REPORTS_DIR / "ml_model_metrics.csv"
-    save_csv(
-        metrics_path,
-        all_metrics,
-        ["model", "accuracy", "f1", "precision", "recall", "auc_roc"],
-    )
+    # ── Save reports ──────────────────────────────────────────────────────
+    fieldnames = ["model", "accuracy", "f1", "precision", "recall",
+                  "auc_roc", "recall_arrested"]
+    save_csv(REPORTS_DIR / "ml_model_metrics.csv", all_metrics, fieldnames)
 
-    print(f"\nModel metrics saved to: {metrics_path}")
+    if best_predictions is not None:
+        save_csv(REPORTS_DIR / "confusion_matrix_best_model.csv",
+                 get_confusion_matrix(best_predictions),
+                 ["label", "prediction", "count"])
 
-    if best_predictions is not None and best_pipeline_model is not None:
-        confusion_rows = get_confusion_matrix(best_predictions)
-        confusion_path = REPORTS_DIR / "confusion_matrix_best_model.csv"
-        save_csv(
-            confusion_path,
-            confusion_rows,
-            ["label", "prediction", "count"],
-        )
+        _, imp_rows = extract_feature_importance(best_pipeline, feature_cols)
+        save_csv(REPORTS_DIR / "feature_importance_best_model.csv",
+                 imp_rows, ["feature", "importance"])
 
-        extracted_model_name, importance_rows = extract_feature_importance(
-            best_pipeline_model,
-            feature_cols,
-        )
-
-        importance_path = REPORTS_DIR / "feature_importance_best_model.csv"
-        save_csv(
-            importance_path,
-            importance_rows,
-            ["feature", "importance"],
-        )
-
-        print(f"Best model: {best_model_name}")
-        print(f"Best model internal stage: {extracted_model_name}")
-        print(f"Best AUC-ROC: {best_auc:.4f}")
-        print(f"Confusion matrix saved to: {confusion_path}")
-        print(f"Feature importance saved to: {importance_path}")
-
-    print("\nML training and MLflow logging completed successfully.")
+    print(f"\n✓ Best model     : {best_model_name}  AUC={best_auc:.4f}")
+    print(f"✓ Reports        : {REPORTS_DIR}")
+    print(f"✓ MLflow exp     : {EXPERIMENT_NAME}")
+    print("ML training and MLflow logging completed successfully.")
+    spark.stop()
 
 
 if __name__ == "__main__":

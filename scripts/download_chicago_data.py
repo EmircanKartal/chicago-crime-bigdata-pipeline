@@ -13,7 +13,7 @@ import pandas as pd
 DATASET_URL = "https://data.cityofchicago.org/resource/ijzp-q8t2.json"
 TARGET_ROWS = 100_000
 OUTPUT_PATH = "data/raw/chicago_crimes_sample.csv"
-COLUMNS = "id,case_number,date,block,iucr,primary_type,description,location_description,arrest,domestic,beat,district,ward,community_area,latitude,longitude,updated_on"
+COLUMNS = "id,case_number,date,block,iucr,primary_type,description,location_description,arrest,domestic,beat,district,ward,community_area,fbi_code,x_coordinate,y_coordinate,year,updated_on,latitude,longitude"
 
 def fetch_chicago_crimes(limit: int, output_path: str, batch_size: int = 50000):
 
@@ -32,13 +32,10 @@ def fetch_chicago_crimes(limit: int, output_path: str, batch_size: int = 50000):
         current_limit = min(batch_size, limit - offset)
 
         params = {
-
-            "$limit": current_limit,
-
+            "$limit":  current_limit,
             "$offset": offset,
-
-            "$order": "date DESC"
-
+            "$order":  "date DESC",
+            "$select": COLUMNS,
         }
 
         print(f"[INFO] Fetching records {offset} - {offset + current_limit}")

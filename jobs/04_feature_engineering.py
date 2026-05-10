@@ -1,185 +1,206 @@
 # Owner: Berfin
-# Branch: feature/step5-step6-ml
-# Purpose: Build ML feature table from silver layer
-# Input:  delta/silver/
-# Output: delta/gold/ml_features/
-# Target: Arrest prediction, binary classification
-# Features:
-#   hour, day_of_week, month, is_weekend, is_night,
-#   domestic_numeric, lat_grid, lon_grid_abs, geo_available,
-#   primary_type_group, location_group, district_group
+# Purpose: Build ML-ready feature table from Silver Delta layer
+# Input:  delta/silver/chicago_crimes_clean
+# Output: delta/gold/ml_features
+#
+# Target: arrest (binary classification — highest accuracy)
+#
+# Feature groups (14 features total, NO leakage):
+#   Time        : hour, day_of_week, month, is_weekend, is_night
+#   Crime       : primary_type_group, crime_group, domestic_numeric
+#   Location    : district, beat, community_area, location_group
+#   Geographic  : lat_grid, lon_grid_abs
 
-from pathlib import Path
-
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col,
-    lit,
-    hour,
-    dayofweek,
-    month,
-    when,
-    trim,
-    upper,
+    col, lit, hour, dayofweek, month,
+    when, trim, upper,
     abs as spark_abs,
     round as spark_round,
-    coalesce,
-    to_timestamp,
-    count,
+    coalesce, to_timestamp, count,
 )
 
 spark = (
     SparkSession.builder
     .appName("FeatureEngineering")
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
     .getOrCreate()
 )
-
 spark.sparkContext.setLogLevel("WARN")
 
-SILVER_PATH = "delta/silver"
-OUTPUT_PATH = "delta/gold/ml_features"
+DATA_SOURCE = os.environ.get("FEATURE_DATA_SOURCE", "delta_silver").strip().lower()
+CSV_PATH    = "/app/data/raw/chicago_crimes_2m.csv"
+SILVER_PATH = "/app/delta/silver/chicago_crimes_clean"
+OUTPUT_PATH = "/app/delta/gold/ml_features"
+
+# Crime type groupings
+VIOLENT_TYPES = [
+    "BATTERY", "ASSAULT", "ROBBERY", "CRIMINAL SEXUAL ASSAULT",
+    "SEX OFFENSE", "HOMICIDE", "KIDNAPPING", "STALKING",
+    "INTIMIDATION", "HUMAN TRAFFICKING", "OFFENSE INVOLVING CHILDREN",
+]
+PROPERTY_TYPES = [
+    "THEFT", "BURGLARY", "MOTOR VEHICLE THEFT", "CRIMINAL DAMAGE",
+    "ARSON", "DECEPTIVE PRACTICE",
+]
+TOP15_TYPES = [
+    "THEFT", "BATTERY", "CRIMINAL DAMAGE", "ASSAULT", "MOTOR VEHICLE THEFT",
+    "OTHER OFFENSE", "DECEPTIVE PRACTICE", "BURGLARY", "NARCOTICS",
+    "CRIMINAL TRESPASS", "ROBBERY", "WEAPONS VIOLATION",
+    "CRIMINAL SEXUAL ASSAULT", "OFFENSE INVOLVING CHILDREN", "SEX OFFENSE",
+]
 
 
 def pick_col(df, candidates):
-    """
-    Finds a column in the DataFrame by trying multiple possible names.
-    This makes the script robust against naming differences such as
-    'Primary Type' vs 'primary_type'.
-    """
     existing = {c.lower(): c for c in df.columns}
-
     for name in candidates:
         if name.lower() in existing:
             return existing[name.lower()]
-
-    raise ValueError(
-        f"None of these columns were found: {candidates}\n"
-        f"Available columns: {df.columns}"
-    )
+    raise ValueError(f"None of {candidates} found. Available: {df.columns}")
 
 
 def main():
-    print(f"Reading silver Delta table from: {SILVER_PATH}")
-    df = spark.read.format("delta").load(SILVER_PATH)
-
-    print("Silver schema:")
-    df.printSchema()
-
-    date_col = pick_col(df, ["date", "Date", "event_time", "timestamp"])
-    arrest_col = pick_col(df, ["arrest", "Arrest"])
-    domestic_col = pick_col(df, ["domestic", "Domestic"])
-    primary_type_col = pick_col(df, ["primary_type", "Primary Type"])
-    location_col = pick_col(df, ["location_description", "Location Description"])
-    district_col = pick_col(df, ["district", "District"])
-    latitude_col = pick_col(df, ["latitude", "Latitude"])
-    longitude_col = pick_col(df, ["longitude", "Longitude"])
-
-    # Convert Date column to timestamp.
-    # Chicago Crime data usually uses a format similar to MM/dd/yyyy hh:mm:ss a.
-    df = df.withColumn(
-        "event_ts",
-        coalesce(
-            to_timestamp(col(date_col)),
-            to_timestamp(col(date_col), "MM/dd/yyyy hh:mm:ss a"),
-            to_timestamp(col(date_col), "yyyy-MM-dd HH:mm:ss"),
+    # ── Load ─────────────────────────────────────────────────────────────
+    if DATA_SOURCE == "csv":
+        print(f"Reading CSV: {CSV_PATH}")
+        df = spark.read.csv(CSV_PATH, header=True, inferSchema=True)
+        df = df.withColumn(
+            "crime_timestamp",
+            coalesce(
+                to_timestamp(col("date"), "yyyy-MM-dd'T'HH:mm:ss.SSS"),
+                to_timestamp(col("date"), "MM/dd/yyyy hh:mm:ss a"),
+            )
         )
-    )
+    else:
+        print(f"Reading Silver Delta: {SILVER_PATH}")
+        df = spark.read.format("delta").load(SILVER_PATH)
 
-    # Keep top 10 primary crime types and group the rest as OTHER.
-    top_primary_types = (
-        df.groupBy(primary_type_col)
-        .agg(count("*").alias("cnt"))
-        .orderBy(col("cnt").desc())
-        .limit(10)
-        .select(primary_type_col)
-        .rdd.flatMap(lambda x: x)
-        .collect()
-    )
+    print(f"Raw rows: {df.count():,}")
 
-    print("Top 10 primary crime types:")
-    for item in top_primary_types:
-        print(f"- {item}")
+    arrest_col       = pick_col(df, ["arrest", "Arrest"])
+    domestic_col     = pick_col(df, ["domestic", "Domestic"])
+    primary_type_col = pick_col(df, ["primary_type", "Primary Type"])
+    location_col     = pick_col(df, ["location_description", "Location Description"])
+    district_col     = pick_col(df, ["district", "District"])
+    beat_col         = pick_col(df, ["beat", "Beat"])
+    community_col    = pick_col(df, ["community_area", "Community Area"])
+    latitude_col     = pick_col(df, ["latitude", "Latitude"])
+    longitude_col    = pick_col(df, ["longitude", "Longitude"])
 
+    # Timestamp
+    ts_col = "crime_timestamp" if "crime_timestamp" in df.columns else None
+    if ts_col:
+        df = df.withColumnRenamed("crime_timestamp", "event_ts")
+    else:
+        df = df.withColumn(
+            "event_ts",
+            coalesce(
+                to_timestamp(col("date"), "yyyy-MM-dd'T'HH:mm:ss.SSS"),
+                to_timestamp(col("date"), "MM/dd/yyyy hh:mm:ss a"),
+            )
+        )
+
+    # ── Feature engineering ───────────────────────────────────────────────
     feature_df = (
         df
-        .withColumn("primary_type_clean", upper(trim(col(primary_type_col))))
-        .withColumn("location_clean", upper(trim(col(location_col))))
-        .withColumn("district_clean", trim(col(district_col).cast("string")))
+        .withColumn("pt_upper", upper(trim(col(primary_type_col))))
+        .withColumn("loc_upper", upper(trim(col(location_col))))
+
+        # ── GROUP 1: Time ─────────────────────────────────────────────────
+        .withColumn("hour",        hour(col("event_ts")))
+        .withColumn("day_of_week", dayofweek(col("event_ts")))
+        .withColumn("month",       month(col("event_ts")))
+        .withColumn("is_weekend",  when(col("day_of_week").isin([1, 7]), lit(1)).otherwise(lit(0)))
+        .withColumn("is_night",    when((col("hour") >= 22) | (col("hour") <= 5), lit(1)).otherwise(lit(0)))
+
+        # ── GROUP 2: Crime characteristics ────────────────────────────────
+        # primary_type_group: top 15 types, rest → OTHER
+        # KEY for arrest: narcotics ~75% arrested, theft ~5% arrested
         .withColumn(
             "primary_type_group",
-            when(col(primary_type_col).isin(top_primary_types), col(primary_type_col))
+            when(col("pt_upper").isin(TOP15_TYPES), col("pt_upper"))
             .otherwise(lit("OTHER"))
         )
+        # 3-class super-category
+        .withColumn(
+            "crime_group",
+            when(col("pt_upper").isin(VIOLENT_TYPES),  lit("VIOLENT"))
+            .when(col("pt_upper").isin(PROPERTY_TYPES), lit("PROPERTY"))
+            .otherwise(lit("OTHER"))
+        )
+        # Domestic incidents → mandatory arrest in Illinois
+        .withColumn(
+            "domestic_numeric",
+            when(col(domestic_col).cast("boolean") == True, lit(1)).otherwise(lit(0))
+        )
+
+        # ── GROUP 3: Location ─────────────────────────────────────────────
+        .withColumn("district",      col(district_col).cast("integer"))
+        .withColumn("beat",          col(beat_col).cast("integer"))
+        .withColumn("community_area",col(community_col).cast("integer"))
         .withColumn(
             "location_group",
-            when(col("location_clean").contains("STREET"), lit("STREET"))
-            .when(col("location_clean").contains("RESIDENCE"), lit("RESIDENCE"))
-            .when(col("location_clean").contains("APARTMENT"), lit("RESIDENCE"))
-            .when(col("location_clean").contains("SIDEWALK"), lit("STREET"))
-            .when(col("location_clean").contains("PARKING"), lit("PARKING"))
-            .when(col("location_clean").contains("STORE"), lit("STORE"))
-            .when(col("location_clean").contains("SCHOOL"), lit("SCHOOL"))
-            .when(col("location_clean").contains("VEHICLE"), lit("VEHICLE"))
+            when(col("loc_upper").contains("STREET"),     lit("STREET"))
+            .when(col("loc_upper").contains("RESIDENCE"),  lit("RESIDENCE"))
+            .when(col("loc_upper").contains("APARTMENT"),  lit("RESIDENCE"))
+            .when(col("loc_upper").contains("SIDEWALK"),   lit("STREET"))
+            .when(col("loc_upper").contains("PARKING"),    lit("PARKING"))
+            .when(col("loc_upper").contains("STORE"),      lit("STORE"))
+            .when(col("loc_upper").contains("SCHOOL"),     lit("SCHOOL"))
+            .when(col("loc_upper").contains("VEHICLE"),    lit("VEHICLE"))
+            .when(col("loc_upper").contains("ALLEY"),      lit("ALLEY"))
+            .when(col("loc_upper").contains("RESTAURANT"), lit("RESTAURANT"))
             .otherwise(lit("OTHER"))
         )
+
+        # ── GROUP 4: Geographic grid ──────────────────────────────────────
+        # coalesce → fill missing coordinates with 0.0 so no NaN reaches models
+        .withColumn("lat_grid",
+            coalesce(spark_round(col(latitude_col).cast("double"), 2), lit(0.0)))
+        .withColumn("lon_grid_abs",
+            coalesce(spark_abs(spark_round(col(longitude_col).cast("double"), 2)), lit(0.0)))
+
+        # ── Target ────────────────────────────────────────────────────────
         .withColumn(
-            "district_group",
-            when(col("district_clean").isNull() | (col("district_clean") == ""), lit("UNKNOWN"))
-            .otherwise(col("district_clean"))
+            "label",
+            when(col(arrest_col).cast("boolean") == True, lit(1.0)).otherwise(lit(0.0))
         )
-        .withColumn("hour", hour(col("event_ts")))
-        .withColumn("day_of_week", dayofweek(col("event_ts")))
-        .withColumn("month", month(col("event_ts")))
-        .withColumn("is_weekend", when(col("day_of_week").isin([1, 7]), lit(1)).otherwise(lit(0)))
-        .withColumn("is_night", when((col("hour") >= 22) | (col("hour") <= 5), lit(1)).otherwise(lit(0)))
-        .withColumn("domestic_numeric", when(col(domestic_col).cast("boolean") == True, lit(1)).otherwise(lit(0)))
-        .withColumn("lat_grid", spark_round(col(latitude_col).cast("double"), 2))
-        .withColumn("lon_grid_abs", spark_abs(spark_round(col(longitude_col).cast("double"), 2)))
-        .withColumn(
-            "geo_available",
-            when(col(latitude_col).isNotNull() & col(longitude_col).isNotNull(), lit(1)).otherwise(lit(0))
-        )
-        .withColumn("label", when(col(arrest_col).cast("boolean") == True, lit(1.0)).otherwise(lit(0.0)))
     )
 
+    # ── Select final columns ──────────────────────────────────────────────
     final_df = (
         feature_df
         .select(
             "event_ts",
-            "label",
-            "hour",
-            "day_of_week",
-            "month",
-            "is_weekend",
-            "is_night",
-            "domestic_numeric",
-            "lat_grid",
-            "lon_grid_abs",
-            "geo_available",
-            "primary_type_group",
-            "location_group",
-            "district_group",
+            "label",                                          # target
+            # Time
+            "hour", "day_of_week", "month", "is_weekend", "is_night",
+            # Crime
+            "primary_type_group", "crime_group", "domestic_numeric",
+            # Location
+            "district", "beat", "community_area", "location_group",
+            # Geographic
+            "lat_grid", "lon_grid_abs",
         )
         .dropna(subset=[
-            "label",
-            "hour",
-            "day_of_week",
-            "month",
-            "lat_grid",
-            "lon_grid_abs",
-            "primary_type_group",
-            "location_group",
-            "district_group",
+            "label", "hour", "day_of_week", "month",
+            "primary_type_group", "district", "location_group",
         ])
     )
 
-    print("Feature table schema:")
+    total = final_df.count()
+    pos   = final_df.filter(col("label") == 1.0).count()
+    neg   = total - pos
+    print(f"\nFeature table rows : {total:,}")
+    print(f"  Arrested   (1)   : {pos:,}  ({100*pos/total:.1f}%)")
+    print(f"  Not arrested (0) : {neg:,}  ({100*neg/total:.1f}%)")
+    print(f"  Features         : 14")
+    print("Schema:")
     final_df.printSchema()
 
-    total_count = final_df.count()
-    print(f"Feature row count: {total_count}")
-
-    print(f"Writing ML feature table to: {OUTPUT_PATH}")
+    print(f"\nWriting to: {OUTPUT_PATH}")
     (
         final_df.write
         .format("delta")
@@ -187,7 +208,6 @@ def main():
         .option("overwriteSchema", "true")
         .save(OUTPUT_PATH)
     )
-
     print("Feature engineering completed successfully.")
 
 

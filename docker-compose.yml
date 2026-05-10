@@ -48,9 +48,11 @@ services:
       - ./jobs:/app/jobs
       - ./notebooks:/app/notebooks
       - ./configs:/app/configs
+      - ./reports:/app/reports
+      - ./mlruns:/app/mlruns
 
   # Spark Worker: executes Spark tasks delegated by the master
-    
+
 
   spark-worker:
     build:
@@ -70,6 +72,8 @@ services:
       - ./jobs:/app/jobs
       - ./notebooks:/app/notebooks
       - ./configs:/app/configs
+      - ./reports:/app/reports
+      - ./mlruns:/app/mlruns
 
   # Producer: reads Chicago Crime CSV and streams JSON records into Kafka
   producer:
@@ -86,9 +90,9 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: chicago_kafka:9092
       KAFKA_TOPIC: chicago_crimes_raw
-      CSV_PATH: /app/data/raw/chicago_crimes_sample.csv
-      PRODUCE_RATE_PER_SEC: 10
-      MAX_MESSAGES: 1000
+      CSV_PATH: /app/data/raw/chicago_crimes_2m.csv
+      PRODUCE_RATE_PER_SEC: 2000
+      MAX_MESSAGES: 2000000
     command: ["tail", "-f", "/dev/null"]
 
   # MLflow: experiment tracking server for ML model runs and artifacts
@@ -98,7 +102,7 @@ services:
     ports:
       - "5001:5000"
     volumes:
-      - ./mlruns:/mlruns
+      - ./mlruns:/app/mlruns   # same path as spark containers → artifacts resolve correctly
     command: >
       sh -c "pip install mlflow &&
-             mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri /mlruns"
+             mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri /app/mlruns"

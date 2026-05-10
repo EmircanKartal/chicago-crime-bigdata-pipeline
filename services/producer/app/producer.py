@@ -10,6 +10,7 @@ import os
 import time
 import hashlib
 from datetime import datetime, timezone
+# pyrefly: ignore [missing-import]
 from kafka import KafkaProducer
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")

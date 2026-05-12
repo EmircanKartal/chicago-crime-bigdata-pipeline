@@ -1,93 +1,109 @@
-# Chicago Crime Pipeline — Runbook
+# Chicago Crime Pipeline — Complete Runbook
 
-Step-by-step guide to build, run, and operate the full pipeline from scratch.  
-Every command you need is here — no guessing.
+**One document. Every command. From zero to presentation.**
 
 ---
 
 ## Table of Contents
 
-1. [Prerequisites](#1-prerequisites)
-2. [First-Time Setup](#2-first-time-setup)
-3. [Step 1 — Build Docker Images](#3-step-1--build-docker-images)
-4. [Step 2 — Start All Services](#4-step-2--start-all-services)
-5. [Step 3 — Stream Data into Kafka (Producer)](#5-step-3--stream-data-into-kafka-producer)
-6. [Step 4 — Kafka → Bronze Delta](#6-step-4--kafka--bronze-delta)
-7. [Step 5 — Bronze → Silver Delta](#7-step-5--bronze--silver-delta)
-8. [Step 6 — Silver → Gold Delta](#8-step-6--silver--gold-delta)
-9. [Step 7 — Feature Engineering → ML Features Delta](#9-step-7--feature-engineering--ml-features-delta)
-10. [Step 8 — Train 5 ML Models + MLflow](#10-step-8--train-5-ml-models--mlflow)
-11. [Step 9 — Open MLflow UI](#11-step-9--open-mlflow-ui)
-12. [Running Notebooks](#12-running-notebooks)
-13. [Full Pipeline — One Block](#13-full-pipeline--one-block)
-14. [Re-running After Changes](#14-re-running-after-changes)
-15. [Verify Row Counts](#15-verify-row-counts)
-16. [Troubleshooting](#16-troubleshooting)
-17. [Service URLs](#17-service-urls)
+1. [Prerequisites & First-Time Setup](#1-prerequisites--first-time-setup)
+2. [Download 2M Rows from Chicago Open Data](#2-download-2m-rows-from-chicago-open-data)
+3. [Build Docker Images](#3-build-docker-images)
+4. [Start All Services](#4-start-all-services)
+5. [Stream Data through Kafka → Bronze → Silver → Gold](#5-stream-data-through-kafka--bronze--silver--gold)
+6. [Feature Engineering → Delta ml_features](#6-feature-engineering--delta-ml_features)
+7. [ML Experiments](#7-ml-experiments)
+8. [Open MLflow UI](#8-open-mlflow-ui)
+9. [Open Streamlit Dashboard](#9-open-streamlit-dashboard)
+10. [Generate All Dashboard Figures](#10-generate-all-dashboard-figures)
+11. [Verify Everything is Working](#11-verify-everything-is-working)
+12. [Presentation Day — Quick Start](#12-presentation-day--quick-start)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Service URLs Reference](#14-service-urls-reference)
 
 ---
 
-## 1. Prerequisites
+## 1. Prerequisites & First-Time Setup
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Docker Desktop | ≥ 4.x | https://www.docker.com/products/docker-desktop |
-| Docker Compose | ≥ 2.x | bundled with Docker Desktop |
-| Python | 3.9+ | for local notebooks only |
+### Requirements
+| Tool | Version | Check |
+|---|---|---|
+| Docker Desktop | ≥ 4.x | `docker --version` |
+| Python | 3.9+ | `python3 --version` |
 
-> **Mac with Apple Silicon (M1/M2/M3):** all images work on `aarch64` — no extra config needed.
-
----
-
-## 2. First-Time Setup
-
+### Clone and setup virtual environment
 ```bash
-# Clone the repo
 git clone <repo-url>
 cd chicago-crime-bigdata-pipeline
 
-# Create the virtual env for local notebooks (not required for Docker jobs)
+# Create Python venv (for local notebooks + Streamlit dashboard)
 python3 -m venv .venv
 source .venv/bin/activate
-pip install pyspark==4.0.0 delta-spark==4.0.1 jupyterlab pandas matplotlib seaborn
+
+pip install \
+  pyspark==4.0.0 \
+  "delta-spark==4.0.1" \
+  jupyterlab \
+  pandas numpy matplotlib seaborn \
+  streamlit plotly folium contextily \
+  requests
 ```
 
 ---
 
-## 3. Step 1 — Build Docker Images
+## 2. Download 2M Rows from Chicago Open Data
 
-> **Run this once, and again whenever `services/spark/Dockerfile` changes.**
+Downloads from the free Chicago Open Data SODA API. No account needed.
+
+```bash
+source .venv/bin/activate
+
+python3 scripts/download_chicago_data.py \
+  --limit 2000000 \
+  --output data/raw/chicago_crimes_2m.csv \
+  --batch-size 50000
+```
+
+**Duration:** ~5–10 min (40 batches × 50k rows)
+
+**Verify:**
+```bash
+wc -l data/raw/chicago_crimes_2m.csv
+# Expected: 2,000,001 (header + 2M rows)
+```
+
+---
+
+## 3. Build Docker Images
+
+> Run this once, and again only if `services/spark/Dockerfile` changes.
+> This bakes Delta Lake + Kafka JARs into the image so no runtime downloads are needed.
 
 ```bash
 docker compose build --no-cache spark-master spark-worker
 ```
 
-**What gets built into the image:**
-- Python packages: pandas, numpy, matplotlib, scikit-learn, mlflow, delta-spark
-- Delta Lake JARs: `delta-spark_2.12-3.1.0.jar`, `delta-storage-3.1.0.jar`
-- Kafka connector JARs: `spark-sql-kafka-0-10_2.12-3.5.1.jar`, `spark-token-provider-kafka-0-10_2.12-3.5.1.jar`, `kafka-clients-3.4.1.jar`, `commons-pool2-2.12.0.jar`
+**Duration:** ~5 min (downloads 6 JARs during build)
 
-**Expected output (last few lines):**
-```
-=> exporting to image
-=> => writing image sha256:...
-=> => naming to docker.io/library/chicago-crime-bigdata-pipeline-spark-master
-```
+**What's baked in:**
+- Delta Lake 3.1.0 JARs (compatible with Spark 3.5.1)
+- Spark-Kafka connector JARs (spark-sql-kafka-0-10, kafka-clients, etc.)
+- Python packages: pandas, numpy, mlflow, delta-spark, scikit-learn
 
 ---
 
-## 4. Step 2 — Start All Services
+## 4. Start All Services
 
 ```bash
 docker compose up -d
 ```
 
-**Verify all containers are running:**
+**Verify all 6 containers are running:**
 ```bash
 docker compose ps
 ```
 
-**Expected — all should show `running`:**
+Expected output:
 ```
 chicago_zookeeper      running
 chicago_kafka          running
@@ -97,480 +113,470 @@ chicago_producer       running
 chicago_mlflow         running
 ```
 
-**If a container is not running:**
+**If any container is not running:**
 ```bash
 docker compose logs <container-name>
-# Example:
-docker compose logs chicago_kafka
+# e.g.: docker compose logs chicago_kafka
 ```
 
 ---
 
-## 5. Step 3 — Stream Data into Kafka (Producer)
+## 5. Stream Data through Kafka → Bronze → Silver → Gold
 
-Reads `data/raw/chicago_crimes_sample.csv` (100,000 rows) and sends each row as a JSON message to the Kafka topic `chicago_crimes_raw` at 500 msg/sec.
+Run these **in order**. Each step depends on the previous.
 
+### Step 5a — Producer: Stream 2M rows into Kafka
 ```bash
 docker compose exec producer python /app/app/producer.py
 ```
+- Sends 100,000–2,000,000 rows at 2,000 msg/sec
+- **Duration:** ~17 min for 2M rows
+- Expected final line: `[SUCCESS] Producer finished. Total messages sent: 2000000`
 
-**Expected output:**
+### Step 5b — Kafka → Bronze Delta
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/01_stream_kafka_to_bronze.py
 ```
-[INFO] Kafka Producer starting...
-[INFO] Max messages: 100000
-[INFO] Produce rate: 500 msg/sec
-[INFO] 100 messages sent to topic 'chicago_crimes_raw'
-...
-[INFO] 100000 messages sent to topic 'chicago_crimes_raw'
-[SUCCESS] Producer finished. Total messages sent: 100000
+- Reads all Kafka offsets from earliest, writes to `delta/bronze/`
+- Expected: `[SUCCESS] Bronze Delta written to: /app/delta/bronze/chicago_crimes_raw`
+
+### Step 5c — Bronze → Silver Delta (clean + dedup)
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/02_bronze_to_silver.py
 ```
+- Type-casts, parses timestamps, deduplicates on `crime_id`
+- Expected: `[SUCCESS] Silver Delta written to: /app/delta/silver/chicago_crimes_clean`
 
-**Duration:** ~3–4 minutes at 500 msg/sec.
-
-> **Note:** If you need to re-run the producer, the old Kafka messages stay in the topic.  
-> To start fresh, wipe Delta data first (see [Re-running After Changes](#14-re-running-after-changes)).
+### Step 5d — Silver → Gold Delta (time feature engineering)
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/03_silver_to_gold.py
+```
+- Adds `crime_hour`, `crime_day_of_week`, `crime_month`, `is_weekend`, `is_night`
+- Expected: `[SUCCESS] Gold Delta written to: /app/delta/gold/chicago_crimes_features`
 
 ---
 
-## 6. Step 4 — Kafka → Bronze Delta
+## 6. Feature Engineering → Delta ml_features
 
-Reads all messages from the Kafka topic (from offset 0) and writes raw JSON payloads to the Bronze Delta table.
+Builds the ML-ready feature table from Silver Delta.
 
 ```bash
-docker compose exec spark-master spark-submit /app/jobs/01_stream_kafka_to_bronze.py
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/04_feature_engineering.py
 ```
 
-**Expected output (last lines):**
-```
-[SUCCESS] Bronze Delta written to: /app/delta/bronze/chicago_crimes_raw
-```
+**Output:** `delta/gold/ml_features`
 
-**Output location:** `delta/bronze/chicago_crimes_raw/`  
-**Expected rows:** ~100,000
+**Features produced (14):**
+| Group | Features |
+|---|---|
+| Time | hour, day_of_week, month, is_weekend, is_night |
+| Behavioural | domestic_numeric |
+| Geographic | lat_grid, lon_grid_abs |
+| Categorical | location_group, district_group, primary_type_group, crime_group |
+| Targets stored | crime_type_str, crime_group, district_str, arrest_label |
 
 ---
 
-## 7. Step 5 — Bronze → Silver Delta
+## 7. ML Experiments
 
-Parses JSON, type-casts all columns, parses `crime_timestamp`, drops nulls on key fields, deduplicates on `crime_id`.
-
+### Experiment 1 — Arrest Prediction (Binary Classification)
 ```bash
-docker compose exec spark-master spark-submit /app/jobs/02_bronze_to_silver.py
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/05_train_models_mlflow.py
 ```
+- **MLflow experiment:** `exp01_chicago_arrest_classification`
+- **Reports saved to:** `reports/exp01_arrest_2m/`
+- **Best result:** GBTClassifier AUC-ROC=0.859, Accuracy=89.5%
+- **Duration:** ~15–20 min (5 models × 2M rows)
 
-**Expected output:**
+### Experiment 2 — Crime Density Regression
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/06_crime_density_regression.py
 ```
-[INFO] Before cleaning row count: 100000
-[INFO] After null cleaning row count: ~100000
-[INFO] After duplicate cleaning row count: ~100000
-[SUCCESS] Silver Delta written to: /app/delta/silver/chicago_crimes_clean
-```
+- **MLflow experiment:** `exp02_crime_density_regression`
+- **Reports saved to:** `reports/exp02_density/`
+- **Best result:** GBTRegressor R²=0.445, RMSE=1.72
+- **Output:** `heatmap_data.csv` → 737 grid cells with predicted crime density
+- **Duration:** ~10 min
 
-**Output location:** `delta/silver/chicago_crimes_clean/`
+### Experiment 3 — Dispatch Protocol (4-class Classification)
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/07_dispatch_protocol.py
+```
+- **MLflow experiment:** `exp03_dispatch_protocol_classification`
+- **Reports saved to:** `reports/exp03_dispatch_protocol/`
+- **Classes:** NonDom+NoArrest / NonDom+Arrest / Dom+NoArrest / Dom+Arrest
+- **Best result:** DecisionTree F1=0.671, recall_class3 (mandatory arrest)=0.612
+- **Duration:** ~20 min (4-class with class balancing)
 
 ---
 
-## 8. Step 6 — Silver → Gold Delta
+## 8. Open MLflow UI
 
-Adds engineered time columns (`crime_hour`, `crime_day_of_week`, `crime_month`, `is_weekend`, `is_night`) and integer flags (`arrest_int`, `domestic_int`).
-
-```bash
-docker compose exec spark-master spark-submit /app/jobs/03_silver_to_gold.py
-```
-
-**Expected output:**
-```
-[INFO] Gold row count: ~100000
-[SUCCESS] Gold Delta written to: /app/delta/gold/chicago_crimes_features
-```
-
-**Output location:** `delta/gold/chicago_crimes_features/`
-
----
-
-## 9. Step 7 — Feature Engineering → ML Features Delta
-
-Reads from Silver Delta, builds 12 ML features + label (`arrest` → 0/1), writes to `ml_features` Delta table.
+MLflow tracks all experiments, parameters, metrics and model artifacts.
 
 ```bash
-docker compose exec spark-master spark-submit /app/jobs/04_feature_engineering.py
-```
-
-**Expected output:**
-```
-Reading silver Delta table from: /app/delta/silver/chicago_crimes_clean
-Top 10 primary crime types: [BATTERY, THEFT, ...]
-Feature row count: ~98000
-Feature engineering completed successfully.
-```
-
-**Output location:** `delta/gold/ml_features/`  
-**Features produced:** `hour`, `day_of_week`, `month`, `is_weekend`, `is_night`, `domestic_numeric`, `lat_grid`, `lon_grid_abs`, `geo_available`, `primary_type_group`, `location_group`, `district_group`  
-**Label:** `label` = 1 if arrested, 0 otherwise
-
----
-
-## 10. Step 8 — Train 5 ML Models + MLflow
-
-Trains 5 classifiers, evaluates with AUC-ROC / Accuracy / F1 / Precision / Recall, logs everything to MLflow, saves reports.
-
-```bash
-docker compose exec spark-master spark-submit /app/jobs/05_train_models_mlflow.py
-```
-
-**Expected output:**
-```
-Train count: ~78000
-Test count : ~20000
-
-Training model: LogisticRegression
-  accuracy: 0.xxxx  f1: 0.xxxx  auc_roc: 0.xxxx
-Training model: DecisionTreeClassifier ...
-Training model: RandomForestClassifier ...
-Training model: GBTClassifier ...
-Training model: NaiveBayes ...
-
-Best model: <ModelName>
-Best AUC-ROC: 0.xxxx
-ML training and MLflow logging completed successfully.
-```
-
-**Duration:** ~5–15 minutes (5 models × training + evaluation).
-
-**Output files:**
-| File | Content |
-|------|---------|
-| `reports/ml_model_metrics.csv` | All 5 models with all metrics |
-| `reports/confusion_matrix_best_model.csv` | Best model confusion matrix |
-| `reports/feature_importance_best_model.csv` | Feature importances |
-| `mlruns/` | MLflow experiment artifacts |
-
----
-
-## 11. Step 9 — Open MLflow UI
-
-```bash
+# MLflow starts automatically with docker compose up -d
+# Open in browser:
 open http://localhost:5001
 ```
 
-Or navigate to `http://localhost:5001` in your browser.
+Or manually navigate to: **`http://localhost:5001`**
 
-You will see the experiment `chicago_crime_arrest_classification` with 5 runs (one per model), comparing all metrics side by side.
+**What you'll see:**
+
+| Experiment | Models | Best Metric |
+|---|---|---|
+| `exp01_chicago_arrest_classification` | LR, DT, RF, GBT, NaiveBayes | GBT AUC-ROC=0.859 |
+| `exp02_crime_density_regression` | LR, DT, RF, GBT, GLR | GBT R²=0.445 |
+| `exp03_dispatch_protocol_classification` | LR, DT, RF, GBT, NaiveBayes | DT F1=0.671 |
+
+**MLflow navigation tips:**
+- Click experiment name → see all runs
+- Click a run → see parameters, metrics, artifacts
+- Select multiple runs → click **Compare** → side-by-side metric charts
+- Filter runs: type `metrics.auc_roc > 0.8` in the search bar
+
+**Take a screenshot for your report:**
+- `Cmd+Shift+4` (Mac) → select the MLflow window → saves to Desktop
 
 ---
 
-## 12. Running Notebooks
+## 9. Open Streamlit Dashboard
 
-Notebooks run **locally** with the `.venv` Python (not inside Docker).  
-They use `local[*]` PySpark, so Spark runs on your machine.
+The interactive dashboard with all required visualizations.
 
 ```bash
-# Activate venv and start Jupyter
+# Activate virtual environment first
+source .venv/bin/activate
+
+# Run from project root
+streamlit run dashboard/streamlit_app.py
+```
+
+Opens automatically at: **`http://localhost:8501`**
+
+**If port is already in use:**
+```bash
+streamlit run dashboard/streamlit_app.py --server.port 8502
+```
+
+**Dashboard tabs:**
+| Tab | Content |
+|---|---|
+| 📊 EDA | Hourly/daily trends, crime types, arrest rates, heatmap, pie charts |
+| 🤖 ML — Sınıflandırma | 5-model grouped bar, feature importance, confusion matrix, ROC curve |
+| 📈 ML — Regresyon | 5-regressor R²/RMSE/MAE comparison, interpretation |
+| 🗺️ Patrol Heatmap | Interactive Plotly scatter_mapbox, top-20 hotspots, risk filter slider |
+
+**Stop Streamlit:** `Ctrl+C` in terminal
+
+---
+
+## 10. Generate All Dashboard Figures
+
+Figures are saved to `dashboard/figures/` with versioned subdirectories.
+Old figures are **never overwritten** — each experiment has its own folder.
+
+```bash
 source .venv/bin/activate
 cd notebooks
-jupyter notebook
+jupyter notebook 06_dashboard_figures.ipynb
 ```
 
-**Notebook order:**
+In Jupyter: **Kernel → Restart Kernel → Run All Cells**
 
-| Notebook | Purpose | Data source |
-|----------|---------|-------------|
-| `01_data_understanding.ipynb` | Schema exploration, first look | CSV |
-| `02_streaming_delta_pipeline.ipynb` | Pipeline architecture overview | — |
-| `03_eda.ipynb` | EDA — stats, charts, distributions | Delta Gold |
-| `04_feature_engineering.ipynb` | Feature logic with business explanations | CSV (100k) |
-| `05_ml_models_mlflow.ipynb` | Model training, comparison | Delta ml_features |
-| `06_dashboard_figures.ipynb` | Dashboard charts | Delta Gold + reports |
-
-**Important for `03_eda.ipynb` and Delta notebooks:**
-
+**Figure output directories:**
 ```
-Kernel → Restart Kernel → Run All Cells
+dashboard/figures/
+  dashboard/          ← fig1–fig10 (ML comparison, EDA, ROC, confusion matrix)
+  exp01_arrest_2m/    ← arrest experiment figures
+  exp02_density/      ← crime density heatmap + top-20 hotspots
+  exp03_dispatch/     ← dispatch protocol figures (generated by notebook)
 ```
 
-Delta notebooks need the JARs loaded before PySpark starts — always do a full restart before running.
-
-**For `03_eda.ipynb` set `RUN_DATA_SOURCE`:**
-- `'gold'` → reads `delta/gold/chicago_crimes_features` (pipeline data)
-- `'csv'` → reads `data/raw/chicago_crimes_sample.csv` (full 100k, timestamps work)
-
----
-
-## 13. Full Pipeline — One Block
-
-Copy-paste this to run the entire pipeline end to end:
-
+**To generate figures for exp03 separately:**
 ```bash
-# Build images (only needed once or after Dockerfile changes)
-docker compose build --no-cache spark-master spark-worker
+source .venv/bin/activate
+python3 - << 'EOF'
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
 
-# Start services
-docker compose up -d
+OUT = Path("dashboard/figures/exp03_dispatch")
+OUT.mkdir(parents=True, exist_ok=True)
+REP = Path("reports/exp03_dispatch_protocol")
 
-# Wait ~10 seconds for Kafka to be ready, then:
-
-# Stream 100k rows into Kafka
-docker compose exec producer python /app/app/producer.py
-
-# Run pipeline jobs in order
-docker compose exec spark-master spark-submit /app/jobs/01_stream_kafka_to_bronze.py
-docker compose exec spark-master spark-submit /app/jobs/02_bronze_to_silver.py
-docker compose exec spark-master spark-submit /app/jobs/03_silver_to_gold.py
-docker compose exec spark-master spark-submit /app/jobs/04_feature_engineering.py
-docker compose exec spark-master spark-submit /app/jobs/05_train_models_mlflow.py
-
-# Open MLflow UI
-open http://localhost:5001
-```
-
----
-
-## 14. Re-running After Changes
-
-### Wipe Delta data and start pipeline fresh
-
-Use this when you want to rebuild Delta tables from scratch (e.g., after fixing a bug in a job):
-
-```bash
-# Delete all Delta tables and streaming checkpoints
-docker compose exec spark-master bash -c \
-  "rm -rf /app/delta/bronze /app/delta/silver /app/delta/gold /app/delta/checkpoints"
-
-# Then re-run from producer onwards (Step 3 → Step 8)
-docker compose exec producer python /app/app/producer.py
-docker compose exec spark-master spark-submit /app/jobs/01_stream_kafka_to_bronze.py
-docker compose exec spark-master spark-submit /app/jobs/02_bronze_to_silver.py
-docker compose exec spark-master spark-submit /app/jobs/03_silver_to_gold.py
-docker compose exec spark-master spark-submit /app/jobs/04_feature_engineering.py
-docker compose exec spark-master spark-submit /app/jobs/05_train_models_mlflow.py
-```
-
-### Re-run only from Silver onwards (Bronze is fine)
-
-```bash
-docker compose exec spark-master spark-submit /app/jobs/02_bronze_to_silver.py
-docker compose exec spark-master spark-submit /app/jobs/03_silver_to_gold.py
-docker compose exec spark-master spark-submit /app/jobs/04_feature_engineering.py
-docker compose exec spark-master spark-submit /app/jobs/05_train_models_mlflow.py
-```
-
-### Re-run only ML (features are fine)
-
-```bash
-docker compose exec spark-master spark-submit /app/jobs/05_train_models_mlflow.py
-```
-
-### Stop everything
-
-```bash
-docker compose down
-```
-
-### Stop and wipe all Docker volumes + images
-
-```bash
-docker compose down --volumes --rmi local
+if (REP / "ml_model_metrics.csv").exists():
+    df = pd.read_csv(REP / "ml_model_metrics.csv")
+    # Per-class recall chart
+    classes = ["recall_class0","recall_class1","recall_class2","recall_class3"]
+    labels  = ["NonDom\nNoArrest","NonDom\nArrest","Dom\nNoArrest","Dom\nArrest (Critical)"]
+    colors  = ["#3498db","#f39c12","#9b59b6","#e74c3c"]
+    fig, axes = plt.subplots(1, len(df), figsize=(14, 5))
+    for ax, (_, row) in zip(axes, df.iterrows()):
+        vals = [row.get(c, 0) for c in classes]
+        ax.bar(labels, vals, color=colors, alpha=0.85)
+        ax.set_title(row["model"].replace("Classifier",""), fontsize=9, fontweight="bold")
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel("Recall")
+        for i, v in enumerate(vals):
+            ax.text(i, v+0.02, f"{v:.2f}", ha="center", fontsize=8)
+    plt.suptitle("Exp03: Dispatch Protocol — Per-Class Recall\n(Class 3 = Mandatory Arrest)", 
+                 fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(str(OUT / "per_class_recall.png"), bbox_inches="tight", dpi=130)
+    plt.show()
+    print(f"Saved: {OUT}/per_class_recall.png")
+else:
+    print("Run job 07 first to generate reports.")
+EOF
 ```
 
 ---
 
-## 15. Verify Row Counts
+## 11. Verify Everything is Working
 
-Check how many rows are in each Delta layer:
-
+### Check Delta table row counts
 ```bash
 docker compose exec spark-master python3 - << 'EOF'
 from pyspark.sql import SparkSession
-
 spark = (
-    SparkSession.builder
-    .appName("verify")
+    SparkSession.builder.appName("verify")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("ERROR")
-
 tables = {
-    "Bronze":       "/app/delta/bronze/chicago_crimes_raw",
-    "Silver":       "/app/delta/silver/chicago_crimes_clean",
-    "Gold":         "/app/delta/gold/chicago_crimes_features",
-    "ML Features":  "/app/delta/gold/ml_features",
+    "Bronze":      "/app/delta/bronze/chicago_crimes_raw",
+    "Silver":      "/app/delta/silver/chicago_crimes_clean",
+    "Gold":        "/app/delta/gold/chicago_crimes_features",
+    "ML Features": "/app/delta/gold/ml_features",
 }
-
 for name, path in tables.items():
     try:
         n = spark.read.format("delta").load(path).count()
-        print(f"  {name:15}: {n:,} rows")
+        print(f"  {name:15}: {n:,} rows  ✓")
     except Exception as e:
-        print(f"  {name:15}: NOT FOUND ({e})")
-
+        print(f"  {name:15}: NOT FOUND — {e}")
 spark.stop()
 EOF
 ```
 
-**Expected output after full pipeline:**
+**Expected:**
 ```
-  Bronze         : 100,000 rows
-  Silver         : ~100,000 rows
-  Gold           : ~100,000 rows
-  ML Features    : ~98,000 rows
+  Bronze         : ~2,000,000 rows  ✓
+  Silver         : ~2,000,000 rows  ✓
+  Gold           : ~2,000,000 rows  ✓
+  ML Features    : ~1,999,997 rows  ✓
+```
+
+### Check MLflow experiments exist
+```bash
+ls mlruns/
+# Should show 4 experiment ID directories
+for d in mlruns/*/; do
+  [ -f "$d/meta.yaml" ] && grep "^name:" "$d/meta.yaml"
+done
+```
+
+### Check reports are saved
+```bash
+echo "=== Experiment Reports ===" && \
+ls reports/exp01_arrest_2m/ && echo "---" && \
+ls reports/exp02_density/ && echo "---" && \
+ls reports/exp03_dispatch_protocol/ 2>/dev/null || echo "exp03: run job 07 first"
+```
+
+### Check Streamlit dependencies
+```bash
+source .venv/bin/activate
+python3 -c "import streamlit, plotly, folium, contextily; print('All dashboard deps OK ✓')"
 ```
 
 ---
 
-## 16. Troubleshooting
+## 12. Presentation Day — Quick Start
+
+If Docker was stopped, run these commands in order:
+
+```bash
+# 1. Start all services (30 sec)
+docker compose up -d
+
+# 2. Wait ~10 sec for Kafka to be ready, then verify
+docker compose ps
+
+# 3. Open MLflow UI in browser
+open http://localhost:5001
+
+# 4. Open Streamlit dashboard
+source .venv/bin/activate
+streamlit run dashboard/streamlit_app.py
+# → opens http://localhost:8501
+
+# 5. (Optional) Open the static HTML dashboard
+open dashboard/index.html
+```
+
+**If you need to rebuild Delta tables from scratch** (e.g., after `docker compose down -v`):
+```bash
+# Wipe old data
+docker compose exec spark-master bash -c \
+  "rm -rf /app/delta/bronze /app/delta/silver /app/delta/gold /app/delta/checkpoints"
+
+# Re-run pipeline
+docker compose exec producer python /app/app/producer.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/01_stream_kafka_to_bronze.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/02_bronze_to_silver.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/03_silver_to_gold.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/04_feature_engineering.py
+```
+
+---
+
+## 13. Troubleshooting
 
 ### `Failed to find data source: kafka`
-
-**Cause:** Spark image was not rebuilt after Kafka JARs were added to the Dockerfile.
-
+Kafka JARs not in image. Rebuild:
 ```bash
 docker compose down
 docker compose build --no-cache spark-master spark-worker
 docker compose up -d
 ```
-
-Verify JARs exist:
-```bash
-docker compose exec spark-master ls /opt/spark/jars/ | grep kafka
-# Should show: spark-sql-kafka-0-10_2.12-3.5.1.jar and 3 others
-```
-
----
+Verify: `docker compose exec spark-master ls /opt/spark/jars/ | grep kafka`
 
 ### `Failed to find data source: delta`
-
-**Cause:** Delta JARs missing or `DeltaSparkSessionExtension` not configured.
-
+Delta JARs missing or session not configured:
 ```bash
-# Check Delta JARs exist
 docker compose exec spark-master ls /opt/spark/jars/ | grep delta
 # Should show: delta-spark_2.12-3.1.0.jar  delta-storage-3.1.0.jar
 ```
-
 If missing → rebuild images.
 
----
-
 ### `PATH_NOT_FOUND: /app/delta/bronze/...`
+Bronze hasn't been written yet. Run job 01 first.
 
-**Cause:** Job 01 (Kafka → Bronze) has not been run yet, or it failed.
-
+### `OutOfMemoryError: Java heap space`
+Always use `--driver-memory 4g` with spark-submit:
 ```bash
-# Check if bronze data exists
-docker compose exec spark-master ls /app/delta/bronze/ 2>/dev/null || echo "Bronze not found"
-
-# Re-run job 01 first
-docker compose exec spark-master spark-submit /app/jobs/01_stream_kafka_to_bronze.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/XX.py
 ```
 
----
-
-### `java.io.FileNotFoundException: /home/spark/.ivy2/cache/...`
-
-**Cause:** Old image without writable ivy cache directory.
-
-```bash
-docker compose build --no-cache spark-master spark-worker
-docker compose up -d
+### `PermissionError: /app/reports` or `/app/dashboard`
+Directory not mounted. Check docker-compose.yml volumes include:
+```yaml
+- ./reports:/app/reports
+- ./dashboard:/app/dashboard
+- ./mlruns:/app/mlruns
 ```
-
----
-
-### `NoClassDefFoundError: SupportsNonDeterministicExpression`
-
-**Cause:** Delta version is too new for the Spark version (Delta 3.2+ needs Spark 3.5.2+).  
-The Dockerfile is pinned to Delta 3.1.0 for Spark 3.5.1 — if you see this, the image needs rebuilding:
-
-```bash
-docker compose build --no-cache spark-master spark-worker
-```
-
----
+Then: `docker compose down && docker compose up -d`
 
 ### `DELTA_CONFIGURE_SPARK_SESSION_WITH_EXTENSION_AND_CATALOG`
+SparkSession missing Delta config. All jobs already have this — if you see it, the job file wasn't saved correctly.
 
-**Cause:** A job's `SparkSession` is missing Delta configs.
-
-All jobs must have:
-```python
-SparkSession.builder
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+### MLflow shows no experiments at `localhost:5001`
+MLflow container needs `/app/mlruns` mount. Check docker-compose:
+```yaml
+mlflow:
+  volumes:
+    - ./mlruns:/app/mlruns
+  command: mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri /app/mlruns
 ```
+Then: `docker compose restart mlflow`
 
----
-
-### MLflow UI not reachable at `localhost:5001`
-
+### Streamlit not found
 ```bash
-# Check if mlflow container is running
-docker compose ps chicago_mlflow
-
-# Check logs
-docker compose logs chicago_mlflow
-
-# Restart it
-docker compose restart chicago_mlflow
+source .venv/bin/activate
+pip install streamlit plotly folium contextily
 ```
 
----
-
-### Bronze has more rows than expected (duplicates from multiple producer runs)
-
-When the producer is run multiple times, Kafka accumulates all messages. Bronze will have them all but Silver deduplicates on `crime_id`, so Silver/Gold/ML Features will still have the correct unique count.
-
-To get a completely clean Bronze, wipe everything and re-run:
+### `NoClassDefFoundError: SupportsNonDeterministicExpression`
+Wrong Delta version for Spark version. The Dockerfile pins Delta 3.1.0 for Spark 3.5.1:
 ```bash
-docker compose exec spark-master bash -c \
-  "rm -rf /app/delta/bronze /app/delta/silver /app/delta/gold /app/delta/checkpoints"
-docker compose exec producer python /app/app/producer.py
-docker compose exec spark-master spark-submit /app/jobs/01_stream_kafka_to_bronze.py
+docker compose build --no-cache spark-master spark-worker
 ```
 
 ---
 
-## 17. Service URLs
+## 14. Service URLs Reference
 
-| Service | URL | Notes |
-|---------|-----|-------|
-| Spark Master UI | http://localhost:8080 | Job status, workers |
-| Spark Worker UI | http://localhost:8081 | Worker metrics |
-| MLflow UI | http://localhost:5001 | Experiment runs, metrics |
-| Kafka | localhost:29092 | External port for local tools |
-| Zookeeper | localhost:2181 | Internal coordination |
+| Service | URL | Username | Notes |
+|---|---|---|---|
+| **MLflow UI** | http://localhost:5001 | — | Experiment tracking |
+| **Streamlit Dashboard** | http://localhost:8501 | — | Interactive dashboard |
+| **Static HTML Dashboard** | `open dashboard/index.html` | — | Offline-friendly |
+| **Spark Master UI** | http://localhost:8080 | — | Job status, workers |
+| **Spark Worker UI** | http://localhost:8081 | — | Worker metrics |
+| Kafka | localhost:29092 | — | External port |
 
 ---
 
-## Pipeline Architecture Summary
+## Architecture Summary
 
 ```
-data/raw/chicago_crimes_sample.csv   (100,000 rows)
+data/raw/chicago_crimes_2m.csv   ← 2,000,000 rows downloaded from Chicago Open Data
         │
         ▼
-[Producer]  → Kafka topic: chicago_crimes_raw  (100,000 messages)
+[Producer]  →  Kafka topic: chicago_crimes_raw  (2M messages at 2000 msg/sec)
         │
         ▼
-[Job 01]  spark-submit 01_stream_kafka_to_bronze.py
-        → delta/bronze/chicago_crimes_raw          (~100,000 rows)
+[Job 01]  01_stream_kafka_to_bronze.py
+        →  delta/bronze/chicago_crimes_raw          (~2M rows)
         │
         ▼
-[Job 02]  spark-submit 02_bronze_to_silver.py
-        → delta/silver/chicago_crimes_clean        (~100,000 rows, deduped)
+[Job 02]  02_bronze_to_silver.py
+        →  delta/silver/chicago_crimes_clean        (~2M rows, deduped + typed)
         │
         ▼
-[Job 03]  spark-submit 03_silver_to_gold.py
-        → delta/gold/chicago_crimes_features       (~100,000 rows + time cols)
+[Job 03]  03_silver_to_gold.py
+        →  delta/gold/chicago_crimes_features       (~2M rows + time features)
         │
         ▼
-[Job 04]  spark-submit 04_feature_engineering.py
-        → delta/gold/ml_features                   (~98,000 rows, 12 features)
+[Job 04]  04_feature_engineering.py
+        →  delta/gold/ml_features                   (~2M rows, 14 ML features)
         │
-        ▼
-[Job 05]  spark-submit 05_train_models_mlflow.py
-        → reports/ml_model_metrics.csv
-        → reports/confusion_matrix_best_model.csv
-        → reports/feature_importance_best_model.csv
-        → mlruns/  (MLflow artifacts)
+        ├──▶ [Job 05]  05_train_models_mlflow.py
+        │           →  exp01: Arrest Prediction (GBT AUC=0.859)
+        │           →  reports/exp01_arrest_2m/
+        │
+        ├──▶ [Job 06]  06_crime_density_regression.py
+        │           →  exp02: Crime Density Regression (GBT R²=0.445)
+        │           →  reports/exp02_density/  +  heatmap_data.csv
+        │
+        └──▶ [Job 07]  07_dispatch_protocol.py
+                    →  exp03: Dispatch Protocol 4-class (DT F1=0.671)
+                    →  reports/exp03_dispatch_protocol/
+
+All experiments → MLflow (http://localhost:5001)
+All figures     → dashboard/figures/{exp01,exp02,exp03,dashboard}/
+Dashboard       → streamlit run dashboard/streamlit_app.py  (http://localhost:8501)
 ```
+
+---
+
+## Experiment Results Summary
+
+| Experiment | Problem | Best Model | Key Metric |
+|---|---|---|---|
+| **exp01** | Arrest prediction (binary) | GBTClassifier | AUC-ROC = **0.859** |
+| **exp02** | Crime density (regression) | GBTRegressor | R² = **0.445** |
+| **exp03** | Dispatch protocol (4-class) | DecisionTree | F1 = **0.671**, recall_class3 = **0.612** |
+
+**exp03 class meaning for presentation:**
+> *"Class 3 is the critical case — domestic violence where Illinois Mandatory Arrest Law requires the officer to make an arrest. Our model recalls 61.2% of these cases before dispatch, meaning 6 out of 10 mandatory-arrest domestic incidents are correctly flagged for the specialized response team."*

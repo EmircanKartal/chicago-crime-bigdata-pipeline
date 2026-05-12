@@ -13,7 +13,7 @@ flowchart LR
     G(["Silver\nDelta Layer"]):::silver
     H(["Gold\nDelta Layer"]):::gold
     I(["ML Models\n+ MLflow"]):::ml
-    J(["Dashboard\n+ Report"]):::output
+    J(["Streamlit\nDashboard"]):::output
 
     A --> B --> C --> D --> E --> F --> G --> H --> I --> J
 
@@ -28,12 +28,13 @@ flowchart LR
     classDef output fill:#002d1a,stroke:#27ae60,color:#d5ffe8
 ```
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
-![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-2.8-231F20?style=flat-square&logo=apachekafka&logoColor=white)
-![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5-E25A1C?style=flat-square&logo=apachespark&logoColor=white)
-![Delta Lake](https://img.shields.io/badge/Delta_Lake-3.0-00ADD8?style=flat-square)
-![MLflow](https://img.shields.io/badge/MLflow-2.x-0194E2?style=flat-square&logo=mlflow&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)
+![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-Confluent_7.4-231F20?style=flat-square&logo=apachekafka&logoColor=white)
+![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5.1-E25A1C?style=flat-square&logo=apachespark&logoColor=white)
+![Delta Lake](https://img.shields.io/badge/Delta_Lake-3.1.0-00ADD8?style=flat-square)
+![MLflow](https://img.shields.io/badge/MLflow-tracked-0194E2?style=flat-square&logo=mlflow&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
 
 **Büyük Veri Analizine Giriş — dönem projesi · end-to-end streaming analytics pipeline**
 
@@ -43,18 +44,19 @@ flowchart LR
 
 ## 1. Project Overview
 
-This project implements a **production-grade, end-to-end big data pipeline** on the Chicago Crime dataset (~8.5M records). It demonstrates the full modern data engineering and data science stack:
+End-to-end big data pipeline on **2,000,000 Chicago Crime records** covering the full modern data engineering and data science stack — from real-time Kafka streaming through Delta Lake lakehouse layers to three MLflow-tracked ML experiments and an interactive Streamlit dashboard.
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Containerization | Docker / Docker Compose | Reproducible environment |
-| Message Streaming | Apache Kafka | Real-time crime event simulation |
-| Stream Processing | Apache Spark Structured Streaming | Stateful transformations |
-| Storage | Delta Lake (Bronze / Silver / Gold) | Lakehouse architecture |
-| Machine Learning | Spark MLlib + MLflow | Crime type prediction & experiment tracking |
-| Visualization | Matplotlib / Seaborn / Plotly | EDA + dashboard |
-
-**ML Goal:** Predict the top-10 most frequent crime types (`primary_type`) from spatial and temporal features — no data leakage (IUCR/description columns excluded).
+| Component | Technology | Details |
+|---|---|---|
+| Containerization | Docker / Docker Compose | 6 services, fully reproducible |
+| Message Streaming | Apache Kafka + Python Producer | 2M records at 2,000 msg/sec |
+| Stream Processing | Spark Structured Streaming | Bronze → Silver → Gold Delta layers |
+| Storage | Delta Lake (ACID, versioned) | ~2M rows per layer |
+| Feature Engineering | Spark MLlib | 14 ML-ready features, no data leakage |
+| ML Experiment 1 | Spark MLlib + MLflow | **Arrest prediction** — GBT AUC-ROC = 0.859 |
+| ML Experiment 2 | Spark MLlib + MLflow | **Crime density regression** — GBT R² = 0.445 |
+| ML Experiment 3 | Spark MLlib + MLflow | **Dispatch protocol 4-class** — DT F1 = 0.671 |
+| Dashboard | Streamlit + Plotly | 4-tab interactive dashboard with patrol heatmap |
 
 ---
 
@@ -67,286 +69,263 @@ This project implements a **production-grade, end-to-end big data pipeline** on 
 ## 3. Dataset
 
 | Property | Details |
-|----------|---------|
+|---|---|
 | **Source** | [Chicago Data Portal — Crimes 2001 to Present](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2) |
-| **Volume** | ~8.5M records (ID counter as of 2026) |
-| **Update cadence** | Daily, excluding last 7 days |
+| **Volume used** | 2,000,000 records (downloaded via SODA API) |
+| **Full dataset** | ~7.9M records |
 | **API** | Socrata SODA — paginated via `$limit` / `$offset` |
-| **Format** | JSON (API) / CSV (bulk download) |
 
-**Key columns used:**
-
+**Key columns:**
 ```
-id · date · primary_type · location_description
-district · ward · community_area · latitude · longitude
-domestic · arrest · beat
+id · date · primary_type · description · location_description
+district · ward · community_area · beat · latitude · longitude
+domestic · arrest · fbi_code
 ```
 
-> **Privacy note:** Addresses are provided at block level only. No precise address
-> inference is performed. `synthetic_user_id` fields in Kafka messages are
-> deterministic hash values — no real user data is involved.
+> **Privacy:** Addresses are block-level only. `synthetic_user_id` in Kafka messages is a deterministic MD5 hash — no real user data.
 
-**Excluded from ML features** (data leakage risk):
-- `iucr` — directly encodes primary_type
-- `description` — sub-description of primary_type
-- `arrest` — post-event information, not available at prediction time
+**Excluded from ML features** (data leakage):
+- `iucr`, `description` — directly encode crime type
+- `arrest`, `domestic` — used only as labels, never as features
 
 ---
 
 ## 4. How to Run
 
 ### Prerequisites
+- Docker Desktop ≥ 4.x with ≥ 8 GB RAM allocated
+- Python 3.9+
 
-- Docker Desktop ≥ 24 with Docker Compose v2
-- 8 GB RAM allocated to Docker
-- ~5 GB free disk space
-
-### Quick start
+### Quick start (3 commands)
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/EmircanKartal/chicago-crime-bigdata-pipeline.git
-cd chicago-crime-bigdata-pipeline
+# 1. Download 2M rows
+python3 scripts/download_chicago_data.py --limit 2000000 --output data/raw/chicago_crimes_2m.csv
 
-# 2. Download sample data (100K records)
-python scripts/download_chicago_data.py
+# 2. Build images + start services
+docker compose build --no-cache spark-master spark-worker && docker compose up -d
 
-# 3. Start all services
-docker compose up -d
-
-# 4. Verify services are running
-docker compose ps
+# 3. Run the full pipeline
+docker compose exec producer python /app/app/producer.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/01_stream_kafka_to_bronze.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/02_bronze_to_silver.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/03_silver_to_gold.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/04_feature_engineering.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/05_train_models_mlflow.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/06_crime_density_regression.py
+docker compose exec spark-master spark-submit --driver-memory 4g /app/jobs/07_dispatch_protocol.py
 ```
 
-### Service ports
-
-| Service | Port | UI |
-|---------|------|----|
-| Kafka Broker | 9092 | — |
-| Zookeeper | 2181 | — |
-| Spark Master | 7077 | http://localhost:8080 |
-| MLflow Tracking | 5000 | http://localhost:5000 |
-
-### Run the pipeline manually
+### Open the dashboards
 
 ```bash
-# Create Kafka topic
-bash scripts/create_kafka_topic.sh
+# MLflow — experiment tracking
+open http://localhost:5001
 
-# Start producer (simulates streaming at 10 msg/sec)
-docker compose exec producer python app/producer.py
-
-# Run Delta pipeline jobs (in order)
-docker compose exec spark spark-submit jobs/01_stream_kafka_to_bronze.py
-docker compose exec spark spark-submit jobs/02_bronze_to_silver.py
-docker compose exec spark spark-submit jobs/03_silver_to_gold.py
-
-# Train ML models and log to MLflow
-docker compose exec spark spark-submit jobs/05_train_models_mlflow.py
+# Streamlit — interactive dashboard
+source .venv/bin/activate
+streamlit run dashboard/streamlit_app.py
+# → http://localhost:8501
 ```
+
+> 📖 **For every command, troubleshooting, service URLs and presentation-day instructions see the complete runbook:**
+> **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)**
 
 ---
 
-## 5. Kafka Producer
+## 5. Delta Lake Pipeline
 
-Located in `services/producer/app/producer.py`
+### Bronze — `delta/bronze/chicago_crimes_raw`
+Raw preservation. Every Kafka message stored as-is with `kafka_key`, `kafka_timestamp`, `json_value`, `bronze_loaded_at`.
 
-**Message format (JSON per record):**
+### Silver — `delta/silver/chicago_crimes_clean`
+Cleaned and typed. Type-casts all columns, parses `crime_timestamp` from ISO format, deduplicates on `crime_id`, drops nulls on key fields.
 
+### Gold — `delta/gold/chicago_crimes_features`
+Analytics-ready. Adds derived time columns: `crime_hour`, `crime_day_of_week`, `crime_month`, `is_weekend`, `is_night`, `arrest_int`, `domestic_int`.
+
+### ML Features — `delta/gold/ml_features`
+14 ML-ready features with no leakage:
+
+| Group | Features |
+|---|---|
+| Time (5) | `hour`, `day_of_week`, `month`, `is_weekend`, `is_night` |
+| Behavioural (1) | `domestic_numeric` |
+| Geographic (2) | `lat_grid`, `lon_grid_abs` |
+| Categorical (3) | `location_group`, `district_group`, `primary_type_group` |
+| Stored targets | `crime_type_str`, `crime_group`, `district_str`, `arrest_label` |
+
+---
+
+## 6. Kafka Producer
+
+`services/producer/app/producer.py` — reads CSV, sends JSON to `chicago_crimes_raw`.
+
+**Message format:**
 ```json
 {
-  "ingest_ts": "2026-04-27T21:10:00Z",
-  "producer_id": "producer-1",
-  "synthetic_user_id": "user_48291",
-  "event_id": "14173521",
-  "related_id": "JJ123456",
-  "event_time": "2024-04-14T00:00:00.000",
-  "event_type": "THEFT",
-  "primary_type": "THEFT",
+  "ingest_ts": "2026-05-10T01:00:00Z",
+  "synthetic_user_id": "user_a3f9d12b",
+  "event_type": "BATTERY",
+  "primary_type": "BATTERY",
+  "crime_id": "14183823",
+  "date": "2026-05-01T00:00:00.000",
   "location_description": "STREET",
   "district": "001",
-  "ward": 42,
   "community_area": "32",
-  "latitude": 41.88,
-  "longitude": -87.63,
+  "latitude": 41.884,
+  "longitude": -87.632,
   "domestic": false,
-  "source": "Chicago Open Data"
+  "arrest": false
 }
 ```
 
-**Configuration (environment variables):**
-
-```bash
-PRODUCE_RATE_PER_SEC=10   # messages per second (tested up to 100/sec)
-KAFKA_TOPIC=chicago_crimes_raw
-KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+**Config (docker-compose env):**
+```
+CSV_PATH=data/raw/chicago_crimes_2m.csv
+PRODUCE_RATE_PER_SEC=2000
+MAX_MESSAGES=2000000
 ```
 
 ---
 
-## 6. Spark + Delta Pipeline
+## 7. EDA — Key Findings
 
-### Bronze layer — `delta/bronze/`
+Notebooks: `notebooks/03_eda.ipynb`
 
-Raw preservation layer. Every Kafka message stored as-is.
+- **Crime volume:** THEFT (22%) and BATTERY (18%) dominate; 30 unique crime types
+- **Time patterns:** Crime peaks at noon and midnight; Friday highest daily volume
+- **Arrest rate:** Only 15.4% of crimes result in arrest — severe class imbalance
+- **Domestic crimes:** 18% of all incidents; carry different legal implications (Illinois Mandatory Arrest)
+- **Geography:** 41.88°N–41.90°N corridor (downtown) has highest density; Districts 6, 8, 11 top volume
+- **Missing data:** Only lat/lon have 1.4% null — all other features complete
 
-```
-kafka_key · kafka_value · topic · partition · offset · kafka_timestamp · ingest_ts · raw_json
-```
-
-### Silver layer — `delta/silver/`
-
-Cleaned and typed layer.
-
-- `id` null → drop
-- `date` → cast to `TimestampType`
-- `latitude` / `longitude` null → exclude from spatial analysis
-- `district`, `ward`, `community_area` → cast to correct types
-- Deduplication by `id`
-- `primary_type` null → drop; `location_description` null → `"UNKNOWN"`
-
-### Gold layer — `delta/gold/`
-
-Analytics-ready aggregates and ML feature table.
-
-| Table | Description |
-|-------|-------------|
-| `gold_crime_daily_counts` | Trend analysis |
-| `gold_crime_hourly_counts` | Time-of-day patterns |
-| `gold_crime_by_district` | Geographic distribution |
-| `gold_crime_by_type` | Class frequency |
-| `gold_ml_features` | Feature-engineered ML input |
-| `gold_model_predictions` | Model output with ground truth |
-
----
-
-## 7. EDA
-
-Key findings from `notebooks/03_eda.ipynb`:
-
-- **Temporal patterns:** Theft peaks in summer months; violent crime spikes on weekend nights
-- **Geographic concentration:** Districts 6, 8, 11 consistently show highest crime density
-- **Time of day:** 12:00 and 20:00 show dual daily peaks across most crime types
-- **Domestic crimes:** Concentrated in residential community areas; strong seasonal signal
-
-EDA visualizations from `notebooks/03_eda.ipynb` use a separate folder per source: **`dashboard/figures/from-csv/`** (CSV), **`dashboard/figures/from-delta-lake/silver/`** (Delta Silver), **`dashboard/figures/from-delta-lake/gold/`** (Delta Gold). Example (CSV tree):
-```
-dashboard/figures/from-csv/
-├── yearly_trend.png
-├── hourly_distribution.png
-├── top10_crime_types.png
-├── district_heatmap.png
-├── location_description_distribution.png
-├── domestic_arrest_comparison.png
-├── weekday_hour_heatmap.png
-└── missing_values.png
-```
-(Additional EDA PNGs such as `daily_trend.png` and numeric plots live in the same folder after a full run.)
+Figures: `dashboard/figures/from-csv/` and `dashboard/figures/from-delta-lake/gold/`
 
 ---
 
 ## 8. Feature Engineering
 
-Implemented in `jobs/04_feature_engineering.py` and `notebooks/04_feature_engineering.ipynb`.
+`jobs/04_feature_engineering.py` + `notebooks/04_feature_engineering.ipynb`
 
-| Feature | Source | Rationale |
-|---------|--------|-----------|
-| `hour` | `date` | Hourly crime patterns |
-| `day_of_week` | `date` | Weekday vs. weekend behaviour |
-| `month` | `date` | Seasonality |
-| `is_weekend` | `day_of_week` | Social mobility signal |
-| `is_night` | `hour` (20:00–06:00) | Night/day crime shift |
-| `district` | raw | Regional crime patterns |
-| `community_area` | raw | Neighbourhood-level context |
-| `location_description_group` | `location_description` | Grouped: STREET · RESIDENCE · STORE · SCHOOL · OTHER |
-| `lat_grid` / `lon_grid` | `latitude` / `longitude` | Rounded to 2 decimals — point location without overfitting |
-| `domestic` | raw | Correlates with specific crime subtypes |
-
-**Label:** `primary_type_top10` — top 10 crime types by frequency; all others → `OTHER`
+All features exclude `arrest`, `domestic`, `iucr`, `description` to prevent leakage.
+Geographic coordinates are rounded to 0.01° (~1 km grid) to reduce overfitting.
+Missing GPS coordinates (1.4%) filled with 0.0 sentinel value.
 
 ---
 
 ## 9. Machine Learning & MLflow
 
-### Models trained
+Three separate experiments tracked in MLflow (`http://localhost:5001`):
 
-| # | Model | Notes |
-|---|-------|-------|
-| 1 | Logistic Regression | Baseline, L2 regularized |
-| 2 | Decision Tree Classifier | Max depth tuned, interpretable |
-| 3 | Random Forest Classifier | 100 trees, most robust |
-| 4 | Gradient Boosted Trees | Binary sub-experiment (THEFT vs. NOT_THEFT) for AUC-ROC |
-| 5 | Naive Bayes | Multinomial, fastest inference |
+### Experiment 1 — Arrest Prediction (Binary Classification)
+**Target:** Will this crime result in an arrest?
 
-### MLflow tracked per run
+| Model | Accuracy | F1 | AUC-ROC |
+|---|---|---|---|
+| **GBTClassifier** 🏆 | **89.5%** | **0.879** | **0.859** |
+| RandomForest | 78.4% | 0.807 | 0.854 |
+| DecisionTree | 79.2% | 0.813 | 0.582 |
+| LogisticRegression | 72.1% | 0.755 | 0.793 |
+| NaiveBayes | 57.7% | 0.634 | 0.450 |
 
-```
-model_name · target · train_rows · test_rows
-features · parameters
-accuracy · weighted_f1 · weighted_precision · weighted_recall · auc_macro_ovr
-artifacts: confusion_matrix.png · roc_curve.png · feature_importance.png · model_artifact
-```
+Class-weight balancing applied (arrested class = 15% of data).
 
-### Access MLflow UI
+---
 
-```bash
-open http://localhost:5000
-```
+### Experiment 2 — Crime Density Regression
+**Target:** How many crimes per 1km² grid cell in a given time window?
 
-Screenshots: `docs/screenshots/mlflow_runs.png`
+| Model | RMSE | MAE | R² |
+|---|---|---|---|
+| **GBTRegressor** 🏆 | **1.72** | **1.17** | **0.445** |
+| DecisionTreeRegressor | 1.77 | 1.19 | 0.415 |
+| RandomForestRegressor | 1.80 | 1.23 | 0.395 |
+| LinearRegression | 2.27 | 1.48 | 0.039 |
+| GeneralizedLinearRegression | 2.29 | 1.50 | 0.020 |
+
+Output: `reports/exp02_density/heatmap_data.csv` — 737 grid cells with predicted crime density → patrol heatmap.
+
+---
+
+### Experiment 3 — Dispatch Protocol (4-class Classification)
+**Target:** Which of 4 response protocols is required?
+
+| Class | Meaning | Frequency |
+|---|---|---|
+| 0 | Non-Domestic, No Arrest — standard report | 67.8% |
+| 1 | Non-Domestic, Arrest — send transport unit | 12.6% |
+| 2 | Domestic, No Arrest — domestic-trained officers | 16.6% |
+| **3** | **Domestic, Arrest — mandatory arrest team** | **2.9%** |
+
+**Real-world motivation:** Illinois Mandatory Arrest Law requires arrest when probable cause exists in domestic incidents. Predicting Class 3 before dispatch ensures the right team arrives first.
+
+| Model | F1 | Recall Class 3 |
+|---|---|---|
+| **DecisionTree** 🏆 | **0.671** | **0.612** |
+| LogisticRegression | 0.617 | 0.630 |
+
+Class weights applied: Class 3 receives **8.5× weight** to improve recall on the rarest, most critical case.
 
 ---
 
 ## 10. Dashboard
 
-Dashboard figures generated in `notebooks/06_dashboard_figures.ipynb`.
+Interactive Streamlit dashboard — `dashboard/streamlit_app.py`
 
-| Figure | File |
-|--------|------|
-| Model comparison bar chart | `dashboard/figures/model_comparison.png` |
-| Confusion matrix (best model) | `dashboard/figures/confusion_matrix.png` |
-| Feature importance | `dashboard/figures/feature_importance.png` |
-| ROC curves (OVR) | `dashboard/figures/roc_curves.png` |
-| Crime trend (2001–2024) | `dashboard/figures/from-csv/yearly_trend.png` (EDA); dashboard notebook may regenerate elsewhere |
-| Geographic density | `dashboard/figures/from-csv/district_heatmap.png` (EDA) |
+```bash
+source .venv/bin/activate
+streamlit run dashboard/streamlit_app.py
+# → http://localhost:8501
+```
 
-> Screenshots are in `docs/screenshots/` — see the full visual summary there.
+| Tab | Content |
+|---|---|
+| 📊 EDA | Hourly/daily time series, top-10 crime types, arrest rate pie, day×hour heatmap |
+| 🤖 ML — Sınıflandırma | 5-model grouped bar, feature importance, confusion matrix, ROC curve |
+| 📈 ML — Regresyon | R²/RMSE/MAE comparison for 5 regressors |
+| 🗺️ Patrol Heatmap | Interactive Plotly scatter_mapbox, top-20 hotspot bars, risk threshold slider |
+
+Static HTML alternative: `open dashboard/index.html`
 
 ---
 
-## 11. Team Contributions
+## 11. Challenges
+
+| Challenge | Solution |
+|---|---|
+| Spark GBTClassifier only supports binary | Wrapped in `OneVsRest` for multiclass experiments |
+| Class imbalance (15% arrests, 2.9% dom+arrest) | Inverse-frequency class weights per experiment |
+| `spark.driver.memory` ignored inside Python code | Always pass `--driver-memory 4g` to spark-submit CLI |
+| Delta JAR / Ivy cache permission error | Baked JARs into Dockerfile; `mkdir /home/spark/.ivy2` with correct ownership |
+| `SupportsNonDeterministicExpression` at runtime | Pinned Delta 3.1.0 (compatible with Spark 3.5.1, not 3.5.2+) |
+| MLflow "Invalid Host header" 403 | Switched from HTTP tracking URI to `file:///app/mlruns` with shared volume |
+| NaN in feature vectors (1.4% missing GPS) | `coalesce(lat_grid, 0.0)` in feature engineering + `.fillna(0)` in ML job |
+| `dashboard/` not mounted in Spark container | Added `- ./dashboard:/app/dashboard` to docker-compose volumes |
+
+---
+
+## 12. Team Contributions
 
 | | | |
 |:---:|:---:|:---:|
 | <a href="https://github.com/EmircanKartal"><img src="https://github.com/EmircanKartal.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/berfinm"><img src="https://github.com/berfinm.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/kagangur"><img src="https://github.com/kagangur.png" width="80" style="border-radius:50%"/></a> |
 | **[Emircan Kartal](https://github.com/EmircanKartal)** | **[Meryem Berfin Kenar](https://github.com/berfinm)** | **[Kağan Gür](https://github.com/kagangur)** |
-| *Infrastructure & Integration* | *Streaming & Analytics* | *ML & Experiment Tracking* |
+| Infrastructure & Integration | Streaming & Analytics | ML & Experiment Tracking |
 | Docker Compose & service configs | Spark Structured Streaming pipeline | Feature engineering pipeline |
-| Kafka Producer implementation | Bronze → Silver → Gold Delta jobs | 5 ML model implementations |
-| Data download (SODA API pagination) | EDA notebooks & visualizations | MLflow experiment logging |
-| Repository structure & CI hygiene | Gold aggregate table design | Model comparison & metrics |
-| End-to-end demo orchestration | Dashboard EDA figures | Dashboard ML figures |
-| README & architecture docs | Technical report (architecture) | Presentation — model results |
-
----
-
-## 12. Challenges
-
-| Challenge | Solution |
-|-----------|----------|
-| Spark GBTClassifier does not natively support multiclass | Used One-vs-Rest wrapper for multiclass; added a dedicated THEFT vs. NOT_THEFT binary experiment for proper AUC-ROC logging |
-| Chicago dataset has no real `user_id` field | Generated deterministic `synthetic_user_id` via SHA hash of `id` — documented in Kafka message schema |
-| Kafka-Spark connector package dependency conflicts | Pinned `spark-sql-kafka` version to match Spark 3.5; added to `spark-defaults.conf` |
-| Large CSV files unsuitable for GitHub | Files in `data/`, `delta/`, `mlruns/` are gitignored; README documents how to re-download via script |
-| Delta Lake schema evolution on re-runs | Enabled `mergeSchema = true` in Spark write options |
-| Data leakage from IUCR / description columns | Excluded from feature set by design; documented in Feature Engineering section |
+| Kafka Producer (2M rows, 2k msg/sec) | Bronze → Silver → Gold Delta jobs | 5 ML model implementations × 3 experiments |
+| Data download script (SODA API) | EDA notebooks & visualisations | MLflow experiment logging |
+| Streamlit dashboard & patrol heatmap | Gold aggregate table design | Model comparison & metrics |
+| Runbook & architecture docs | Technical report | Presentation — model results |
 
 ---
 
 <div align="center">
 
-**Büyük Veri Analizine Giriş — Dönem Projesi**
+**Büyük Veri Analizine Giriş — 2025-2026 Bahar Dönemi**
 
 Chicago Crime Dataset · [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2)
+
+📖 Full commands & troubleshooting → [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
 
 </div>

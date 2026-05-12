@@ -429,9 +429,6 @@ open http://localhost:5001
 source .venv/bin/activate
 streamlit run dashboard/streamlit_app.py
 # → opens http://localhost:8501
-
-# 5. (Optional) Open the static HTML dashboard
-open dashboard/index.html
 ```
 
 **If you need to rebuild Delta tables from scratch** (e.g., after `docker compose down -v`):
@@ -520,7 +517,6 @@ docker compose build --no-cache spark-master spark-worker
 |---|---|---|---|
 | **MLflow UI** | http://localhost:5001 | — | Experiment tracking |
 | **Streamlit Dashboard** | http://localhost:8501 | — | Interactive dashboard |
-| **Static HTML Dashboard** | `open dashboard/index.html` | — | Offline-friendly |
 | **Spark Master UI** | http://localhost:8080 | — | Job status, workers |
 | **Spark Worker UI** | http://localhost:8081 | — | Worker metrics |
 | Kafka | localhost:29092 | — | External port |

@@ -133,6 +133,19 @@ streamlit run dashboard/streamlit_app.py
 
 ---
 
+## 📁 Project Documents
+
+All project documents are in the [`docs/`](docs/) folder:
+
+| Document | File | Description |
+|---|---|---|
+| **Runbook** | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Every command from zero to presentation — setup, pipeline, ML, MLflow, Streamlit, troubleshooting |
+| **Technical Report (Short)** | [`docs/Teknik_Rapor_Ozet(2-3 sayfa).md`](docs/Teknik_Rapor_Ozet(2-3%20sayfa).md) | 2–3 page concise report covering all 7 assignment steps, ML results and key findings |
+| **Technical Report (Full)** | [`docs/Kapsamlı Teknik Rapor (44 sayfa).pdf`](<docs/Kapsamlı%20Teknik%20Rapor%20(44%20sayfa).pdf>) | 44-page academic report — full methodology, literature, all experiments, screenshots |
+| **Presentation** | [`docs/Chicago Suç Analitiği ve Karar Destek Sistemi Sunum.pdf`](<docs/Chicago%20Suç%20Analitiği%20ve%20Karar%20Destek%20Sistemi%20Sunum.pdf>) | Project presentation slides — pipeline, EDA, 3 ML experiments, dashboard |
+
+---
+
 ## 5. Delta Lake Pipeline
 
 ### Bronze — `delta/bronze/chicago_crimes_raw`
@@ -338,9 +351,9 @@ Each experiment tab opens with a Turkish scenario card explaining the real-world
   </td>
 </tr>
 <tr>
-  <td width="33%" align="center"><strong><a href="https://github.com/EmircanKartal">Emircan Kartal</a></strong></td>
-  <td width="33%" align="center"><strong><a href="https://github.com/berfinm">Meryem Berfin Kenar</a></strong></td>
-  <td width="33%" align="center"><strong><a href="https://github.com/kagangur">Kağan Gür</a></strong></td>
+  <td width="33%" align="center"><strong><a href="https://github.com/EmircanKartal">Emircan Kartal</a></strong><br/><sub>220201056</sub></td>
+  <td width="33%" align="center"><strong><a href="https://github.com/berfinm">Meryem Berfin Kenar</a></strong><br/><sub>220201143</sub></td>
+  <td width="33%" align="center"><strong><a href="https://github.com/kagangur">Kağan Gür</a></strong><br/><sub>220201067</sub></td>
 </tr>
 </table>
 </div>

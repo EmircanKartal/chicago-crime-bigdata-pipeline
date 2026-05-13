@@ -561,7 +561,7 @@ data/raw/chicago_crimes_2m.csv   ← 2,000,000 rows downloaded from Chicago Open
 
 All experiments → MLflow (http://localhost:5001)
 All figures     → dashboard/figures/{exp01,exp02,exp03,dashboard}/
-Dashboard       → streamlit run dashboard/streamlit_app.py  (http://localhost:8501)
+Dashboard       → streamlit run dashboard/streamlit_app.py  (httpIn StreamElite, the EDA tab looks not quite right because it must represent the real numbers, which is ://localhost:8501)
 ```
 
 ---

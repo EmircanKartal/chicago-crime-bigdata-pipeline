@@ -305,18 +305,12 @@ Static HTML alternative: `open dashboard/index.html`
 
 ---
 
-## 12. Team Contributions
+## 12. Team
 
 | | | |
 |:---:|:---:|:---:|
 | <a href="https://github.com/EmircanKartal"><img src="https://github.com/EmircanKartal.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/berfinm"><img src="https://github.com/berfinm.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/kagangur"><img src="https://github.com/kagangur.png" width="80" style="border-radius:50%"/></a> |
 | **[Emircan Kartal](https://github.com/EmircanKartal)** | **[Meryem Berfin Kenar](https://github.com/berfinm)** | **[Kağan Gür](https://github.com/kagangur)** |
-| Infrastructure & Integration | Streaming & Analytics | ML & Experiment Tracking |
-| Docker Compose & service configs | Spark Structured Streaming pipeline | Feature engineering pipeline |
-| Kafka Producer (2M rows, 2k msg/sec) | Bronze → Silver → Gold Delta jobs | 5 ML model implementations × 3 experiments |
-| Data download script (SODA API) | EDA notebooks & visualisations | MLflow experiment logging |
-| Streamlit dashboard & patrol heatmap | Gold aggregate table design | Model comparison & metrics |
-| Runbook & architecture docs | Technical report | Presentation — model results |
 
 ---
 

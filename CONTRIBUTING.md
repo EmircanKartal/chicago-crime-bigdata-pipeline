@@ -2,73 +2,94 @@
 
 ## Team
 
-| Member | GitHub | Role |
-|--------|--------|------|
-| Emircan Kartal | @EmircanKartal (https://github.com/EmircanKartal) | Infrastructure & Integration |
-| Meryem Berfin Kenar | @berfinm (https://github.com/berfinm) | Streaming & Analytics |
-| Kagan Gur | @kagangur (https://github.com/kagangur) | ML & Experiment Tracking |
+| Üye | GitHub |
+|-----|--------|
+| Emircan Kartal | [@EmircanKartal](https://github.com/EmircanKartal) |
+| Meryem Berfin Kenar | [@berfinm](https://github.com/berfinm) |
+| Kağan Gür | [@kagangur](https://github.com/kagangur) |
 
-## Branch strategy
+---
 
-Each person works on their own branch and opens a PR to main when a task is done.
-Never commit directly to main.
+## Branch Strategy
 
-    main                  <- protected, only merged PRs
-    emircan/infra-kafka   <- Docker, Kafka, Producer, repo setup
-    berfin/spark-delta    <- Spark Streaming, Delta layers, EDA
-    kagan/ml-mlflow       <- Feature engineering, ML models, MLflow
+Her özellik ayrı bir branch üzerinde geliştirilir; tamamlandığında `main` branch'e PR açılır.
+`main` branch'e doğrudan commit yapılmaz.
 
-## Commit message format
+```
+main                    ← korumalı, yalnızca merge edilen PR'lar
+feature/<konu>          ← yeni özellik geliştirme
+fix/<konu>              ← hata düzeltme
+docs/<konu>             ← dokümantasyon güncellemesi
+```
 
-    type(scope): short description
+---
 
-| Type  | When to use |
-|-------|-------------|
-| feat  | New working feature or component |
-| fix   | Bug fix or error correction |
-| wip   | Work in progress checkpoint |
-| docs  | README, report, architecture notes |
-| chore | Config, gitignore, dependencies, folder structure |
+## Commit Mesajı Formatı
 
-Examples:
+```
+type(scope): kısa açıklama
+```
 
-    feat(kafka): add configurable rate producer
-    feat(spark): bronze delta write from kafka stream
-    fix(delta): null handling in silver cleaning job
-    docs(readme): add architecture diagram
-    chore: initial project scaffold
+### Tip Listesi
 
-## What NOT to commit
+| Tip | Ne Zaman Kullanılır |
+|-----|---------------------|
+| `feat` | Çalışan yeni bir özellik veya bileşen |
+| `fix` | Hata düzeltme |
+| `wip` | Tamamlanmamış, devam eden çalışma |
+| `docs` | README, rapor, mimari notları |
+| `chore` | Konfigürasyon, bağımlılıklar, klasör yapısı |
+| `refactor` | Davranış değişmeden yapısal iyileştirme |
+| `test` | Test ekleme veya düzenleme |
 
-- data/       CSV files, raw downloads
-- delta/      Delta Lake table files
-- mlruns/     MLflow experiment artifacts
-- .env        environment secrets
-- __pycache__/, .ipynb_checkpoints/
+### Örnekler
 
-All of the above are in .gitignore. Never use git add -f on these.
+```
+feat(kafka): saniyede 2000 mesaj kapasiteli producer eklendi
+feat(spark): kafka akışından bronze delta yazımı tamamlandı
+feat(delta): silver temizleme job'ı — null ve duplike temizliği
+feat(ml): 5 model × 3 deney MLflow entegrasyonuyla tamamlandı
+fix(delta): silver job timestamp ayrıştırma formatı düzeltildi
+fix(spark): feature vektöründe NaN değer sorunu giderildi
+docs(readme): mimari diyagram ve runbook bağlantısı eklendi
+chore(docker): Kafka ve Delta JAR'ları build-time imaja dahil edildi
+```
 
-## Per-task checklist
+### PR Mesajı Şablonu
 
-Before marking any task done:
-- [ ] Code runs locally or inside Docker
-- [ ] Screenshot taken (for Docker/Spark/MLflow output)
-- [ ] File has a comment explaining what it does
-- [ ] Committed on your branch with a proper commit message
-- [ ] PR opened or branch pushed to remote
+```
+## Yapılanlar
+- Kısa madde listesi
 
-## Responsibility matrix
+## Test
+- Nasıl test edildiği
 
-| Area | Owner | Support |
-|------|-------|---------|
-| docker-compose.yml + Dockerfiles | Emircan | - |
-| Kafka Producer | Emircan | - |
-| Data download script | Emircan | - |
-| Spark Structured Streaming (job 01) | Berfin | - |
-| Bronze to Silver to Gold (jobs 02-03) | Berfin | - |
-| EDA notebook | Berfin | - |
-| Feature engineering (job 04) | Kagan | - |
-| ML models + MLflow (job 05) | Kagan | - |
-| Dashboard figures (notebook 06) | Kagan | Berfin |
-| Technical report | Berfin + Emircan | - |
-| Presentation slides | Everyone | - |
+## Ekran Görüntüsü (varsa)
+```
+
+---
+
+## Git'e Eklenmeyecekler
+
+Aşağıdaki dizin ve dosyalar `.gitignore` kapsamındadır; `git add -f` ile kesinlikle eklenmez:
+
+```
+data/          CSV dosyaları, ham indirmeler
+delta/         Delta Lake tablo dosyaları
+mlruns/        MLflow deney artifact'ları
+.env           Ortam değişkenleri ve gizli bilgiler
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+.DS_Store
+```
+
+---
+
+## PR Açmadan Önce Kontrol Listesi
+
+- [ ] Kod yerel ortamda veya Docker içinde hatasız çalışıyor
+- [ ] Önemli çıktılar için ekran görüntüsü alındı
+- [ ] Her dosyanın başında ne yaptığını açıklayan yorum mevcut
+- [ ] Branch üzerinde uygun formatta commit mesajıyla commit yapıldı
+- [ ] PR açıklaması dolduruldu

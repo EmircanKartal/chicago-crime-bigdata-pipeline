@@ -21,680 +21,700 @@
 
 ## Özet
 
-Bu çalışmada, Chicago şehrine ait 2.000.000 suç kaydından oluşan gerçek dünya veri seti üzerinde uçtan uca bir büyük veri pipeline'ı tasarlanmış ve hayata geçirilmiştir. Sistem; Apache Kafka ile gerçek zamanlı veri akışı simülasyonu, Apache Spark Structured Streaming ile akış verisi işleme, Delta Lake ile Bronze/Silver/Gold katmanlı depolama, Spark MLlib ile makine öğrenmesi model eğitimi ve MLflow ile deney takibini entegre biçimde barındırmaktadır. Üç farklı makine öğrenmesi deneyi yürütülmüş; tutuklama tahmini (binary sınıflandırma), suç yoğunluğu regresyonu ve müdahale protokolü sınıflandırması (dört sınıflı) problemleri ele alınmıştır. En başarılı sonuçlar, Gradient Boosted Trees (GBT) algoritmasıyla elde edilmiş olup tutuklama tahmininde AUC-ROC değeri 0,859, suç yoğunluğu regresyonunda ise R² değeri 0,445 olarak gerçekleşmiştir. Proje çıktıları, Streamlit tabanlı interaktif bir dashboard aracılığıyla sunulmaktadır.
+Günümüz kentsel yönetiminde, suç örüntülerinin analiz edilmesi ve kaynakların etkin biçimde dağıtılması hem güvenlik birimleri hem de şehir planlamacıları açısından kritik bir öneme sahiptir. Bu çalışmada, söz konusu ihtiyaca yanıt vermek amacıyla Chicago şehrine ait 2.000.000 suç kaydı üzerinde uçtan uca bir büyük veri mühendisliği ve makine öğrenmesi pipeline'ı tasarlanmış, hayata geçirilmiş ve kapsamlı biçimde değerlendirilmiştir.
 
-**Anahtar Kelimeler:** Büyük Veri, Apache Kafka, Apache Spark, Delta Lake, MLflow, Makine Öğrenmesi, Chicago Suç Analizi
+Projenin teknik altyapısı, birbirini tamamlayan çeşitli açık kaynak teknolojilerinin entegrasyonu üzerine inşa edilmiştir. Veri akışı katmanında Apache Kafka kullanılarak Chicago Open Data platformundan indirilen 2.000.000 kayıt, saniyede 2.000 mesaj hızında gerçek zamanlı bir streaming simülasyonuyla sisteme beslenmiştir. Gelen mesajlar Apache Spark Structured Streaming aracılığıyla işlenmiş; ham veri, temizlenmiş veri ve analitik açıdan hazır veri olmak üzere üç katmandan (Bronze, Silver, Gold) oluşan Delta Lake mimarisine yazılmıştır. Delta Lake'in ACID uyumluluğu, şema zorlama ve zaman yolculuğu (time travel) özellikleri, veri güvenilirliği açısından üretim ortamı standartlarının sağlanmasına olanak tanımıştır.
+
+Veri işleme pipeline'ının ardından, 14 anlamlı özellik içeren bir makine öğrenmesi girdi tablosu oluşturulmuştur. Bu süreçte veri sızıntısı (data leakage) problemine özellikle dikkat edilmiş; tutuklama bilgisi, suç alt tipi açıklamaları ve IUCR kodları gibi doğrudan hedef değişkeni kodlayan sütunlar özellik setinden çıkarılmıştır. Türetilen özellikler zaman, coğrafi ızgara, davranışsal ve kategorik olmak üzere dört grupta sınıflandırılmış; her birinin gerçek dünya bağlamındaki iş mantığı belgelenmiştir.
+
+Makine öğrenmesi aşamasında Spark MLlib kütüphanesi kullanılarak üç bağımsız deney yürütülmüştür. Birinci deneyde (Exp01), suç olaylarının özelliklerine bakılarak tutuklamanın gerçekleşip gerçekleşmeyeceği ikili sınıflandırma problemi olarak modellenmiştir. Verilerin yalnızca %15,4'ünün tutuklamayla sonuçlanması nedeniyle ortaya çıkan ciddi sınıf dengesizliği, ters frekans ağırlıklandırması ile giderilmiştir. Gradient Boosted Trees (GBT) algoritması AUC-ROC=0,859 ile en yüksek performansı sergilemiş; suç tipinin tahmin önem skorundaki %73,2'lik payı dikkat çekici bir bulgu olarak öne çıkmaktadır. İkinci deneyde (Exp02), coğrafi ızgara hücresi ve zaman dilimi bazında suç yoğunluğunun tahminini amaçlayan bir regresyon modeli kurulmuştur. 764.393 benzersiz ızgara-zaman kombinasyonu üzerinde eğitilen GBT regresör modeli R²=0,445 değerine ulaşmış; bu oran, modelin suç yoğunluğu varyansının yaklaşık yarısını açıklayabildiğini göstermektedir. Üçüncü deneyde (Exp03) ise aile içi şiddet boyutunu ve Illinois Zorunlu Tutuklama Yasası çerçevesini dikkate alan dört sınıflı bir müdahale protokolü sınıflandırıcısı geliştirilmiştir. Bu modelin temel amacı, operasyon merkezinin olay yerine ulaşmadan önce doğru ekibi ve ekipmanı görevlendirmesine imkân tanımaktır. Özellikle %2,9 oranında görülen ancak hukuki açıdan en kritik sınıf olan "aile içi + tutuklama" vakalarını (Sınıf 3) tespit edebilmek için söz konusu sınıfa 8,54 kat ağırlık uygulanmış; Random Forest modeli bu kritik sınıfta %70 duyarlılık (recall) değerine ulaşmıştır. Tüm deneyler MLflow ile parametreler, metrikler ve model artifact'ları dahil olmak üzere kayıt altına alınmıştır.
+
+Proje çıktıları, dört sekmeden oluşan Streamlit tabanlı interaktif bir dashboard aracılığıyla sunulmaktadır. Dashboard; keşifsel veri analizi görselleri, her deney için model karşılaştırma grafikleri, Chicago'nun suç yoğunluğunu gerçek harita üzerinde gösteren interaktif patrol haritası ve devriye optimizasyonu için öncelikli bölgeler listesini içermektedir. Tüm grafikler, statik PNG dosyası yerine anlık veri hesaplamasına dayalı Plotly bileşenleriyle oluşturulmaktadır.
+
+Teknik açıdan değerlendirildiğinde, projenin endüstriyel büyük veri pipeline tasarım pratiğine uygun olduğu; gerçek zamanlı veri akışı, katmanlı depolama mimarisi, otomatik deney takibi ve interaktif görselleştirme bileşenlerinin bütünleşik çalıştığı görülmektedir. Karşılaşılan başlıca teknik güçlükler arasında Spark sürüm uyumluluğu sorunları, bellek yönetimi kısıtları ve MLflow izleme altyapısının konteyner ortamında yapılandırılması yer almaktadır; her biri belgelenmiş çözümlerle aşılmıştır.
+
+**Anahtar Kelimeler:** Büyük Veri Mühendisliği, Apache Kafka, Apache Spark Structured Streaming, Delta Lake, Lakehouse Mimarisi, MLflow, Spark MLlib, Gradient Boosted Trees, Sınıf Dengesizliği, Suç Analizi, Devriye Optimizasyonu, Illinois Zorunlu Tutuklama Yasası
 
 ---
 
 ## 1. Giriş
 
-Büyük veri sistemleri, günümüz veri mühendisliğinin temel yapı taşlarından birini oluşturmaktadır. Gerçek zamanlı veri akışlarının işlenmesi, depolanması ve analiz edilmesi; endüstride olduğu gibi akademik çevrelerde de giderek artan bir ilgi görmektedir. Bu çalışmada, Chicago şehrinin kamuya açık suç verisi üzerinde modern bir büyük veri pipeline'ı inşa edilmektedir.
+### 1.1. Motivasyon ve Arka Plan
 
-Projenin birincil amacı, teorik bilginin pratik bir sistemde bütünleşik olarak uygulanmasını sağlamaktır. Bu çerçevede; veri üretiminden depolamaya, keşifsel analizden makine öğrenmesi model eğitimine kadar uzanan tüm süreç tek bir entegre pipeline içinde ele alınmaktadır.
+Kentsel güvenlik yönetimi, büyük şehirlerin karşı karşıya olduğu en karmaşık operasyonel sorunların başında gelmektedir. Kayıtlara geçmiş suç olaylarının hacmi her yıl artarken polis departmanlarının kullanabileceği personel, araç ve bütçe kaynakları sabit kalmakta ya da kısıtlı biçimde büyümektedir. Bu asimetri, karar vericilerin mevcut kaynakları nereye, ne zaman ve nasıl yoğunlaştırması gerektiğini bilimsel bir temele oturtma ihtiyacını doğurmaktadır. Geleneksel yaklaşımlarda devriye rotaları çoğunlukla tarihsel deneyime ve sezgisel değerlendirmelere dayanmaktadır; oysa milyonlarca satırlık geçmiş veri içinde saklı olan mekânsal ve zamansal örüntüler, uygun analitik araçlar kullanıldığında sistematik biçimde ortaya çıkarılabilmektedir.
 
-### 1.1. Çalışmanın Kapsamı
+Veri odaklı karar alma (data-driven decision making) paradigması, son on yılda polis bilimleri alanında önemli bir yer edinmiştir. Chicago, New York ve Los Angeles gibi büyük Amerikan şehirleri suç tahmin sistemleri geliştirmiş; bu sistemler sıcak nokta (hot-spot) devriyeciliği, önleyici konuşlanma ve kaynak önceliklendirme gibi uygulamalara zemin hazırlamıştır. Bununla birlikte, söz konusu sistemlerin büyük çoğunluğu kapalı kaynaklı veya akademik erişime kapalı yapılardır. Chicago Open Data platformunun tüm suç verilerini kamuya açık tutması, bu alanda bağımsız araştırmacılara ve öğrenci projelerine eşsiz bir fırsat sunmaktadır.
 
-Proje yedi temel adımdan oluşmaktadır:
+Öte yandan, yalnızca analitik bir çalışma olmanın ötesinde, projenin ikinci bir motivasyon boyutu daha bulunmaktadır: modern veri mühendisliği araçlarının gerçek bir probleme entegre biçimde uygulanması. Apache Kafka, Apache Spark, Delta Lake ve MLflow gibi endüstri standardı bileşenler yalnızca kavramsal düzeyde öğrenilmekle kalmayıp işlevsel bir pipeline içinde birlikte çalışır hâle getirilmiştir.
 
-1. Docker ile konteynerize edilmiş servis ortamının kurulumu
-2. Apache Kafka kullanılarak gerçek zamanlı streaming veri üretimi
-3. Spark Structured Streaming ile veri temizleme ve Delta Lake'e yazma
-4. Delta Lake Gold tablosu üzerinde keşifsel veri analizi (EDA)
-5. Makine öğrenmesi için anlamlı özellik mühendisliği
-6. Beş farklı modelin eğitimi, karşılaştırılması ve MLflow ile takibi
-7. Sonuçların interaktif dashboard aracılığıyla görselleştirilmesi
+### 1.2. Problemin Tanımı
 
-### 1.2. Veri Seti
+Bu çalışmada üç bağımsız ancak birbirleriyle ilişkili tahmin problemi ele alınmaktadır:
 
-Çalışmada kullanılan veri seti, Chicago Open Data platformu üzerinden SODA (Socrata Open Data API) aracılığıyla edinilmiş olup 2001 yılından günümüze kadar kayıt altına alınan suç olaylarını içermektedir. Toplamda 2.000.000 kayıt kullanılmış; her kayıt suçun türü, konumu, tarihi, tutuklamanın gerçekleşip gerçekleşmediği ve aile içi şiddet niteliği taşıyıp taşımadığı gibi bilgileri kapsamaktadır.
+**Problem 1 — Tutuklama Tahmini:** Bir suç olayının gözlemlenebilir özellikleri (suç tipi, olay yeri, gerçekleştiği saat ve gün, polis bölgesi) göz önünde bulundurulduğunda, olayın tutuklamayla sonuçlanıp sonuçlanmayacağı öngörülebilir mi? Bu, operasyon merkezlerinin olay yerine nakliye kapasiteli araç gönderip göndermeyeceğini olaydan önce kestirebildiği pratik bir karar destek uygulamasına karşılık gelmektedir.
+
+**Problem 2 — Suç Yoğunluğu Tahmini:** Şehrin belirli bir coğrafi ızgara hücresinde, belirli bir zaman diliminde kaç suç beklenmektedir? Zaman ve mekânın kesişiminden türetilen bu tahmin, devriye birimlerinin anlık konuşlanma kararları için temel bir girdi niteliği taşımaktadır.
+
+**Problem 3 — Müdahale Protokolü Sınıflandırması:** Bir olay bildirimi alındığında, olay yerine görevlendirilen birimin hangi donanım ve uzmanlıkla sahaya çıkması gerektiği önceden belirlenebilir mi? Bu problemi özgün kılan husus, Illinois eyalet hukukunun aile içi şiddet vakalarında memura koşulsuz tutuklama yükümlülüğü getiren Zorunlu Tutuklama Yasası'dır. Sınıf 3 olarak tanımlanan "aile içi şiddet + tutuklama zorunluluğu" vakası verilerin yalnızca %2,9'unu oluşturmasına karşın hukuki ve operasyonel açıdan en kritik kategoriyi temsil etmektedir.
+
+### 1.3. Çalışmanın Katkıları
+
+Bu çalışma, birden fazla katmanda özgün katkılar sunmaktadır:
+
+- **Teknik katkı:** Kafka → Spark Structured Streaming → Delta Lake Bronze/Silver/Gold → Spark MLlib → MLflow zincirinden oluşan, Docker ile tamamen konteynerize edilmiş ve yeniden üretilebilir (reproducible) bir uçtan uca büyük veri pipeline'ı tasarımı ve gerçekleştirimi.
+- **Analitik katkı:** Chicago suç verisi üzerinde sınıf dengesizliğine karşı dayanıklı, veri sızıntısı kontrolü uygulanmış ve üç farklı tahmin hedefi için özelleştirilmiş özellik mühendisliği yaklaşımı.
+- **Pratik katkı:** Suç yoğunluğu tahminini gerçek harita görselleştirmesiyle birleştiren ve öncelikli devriye bölgelerini otomatik olarak sıralayan bir karar destek arayüzü.
+- **Belgeleme katkısı:** Her teknik kararın ve karşılaşılan güçlüğün gerekçesiyle birlikte kayıt altına alındığı kapsamlı bir teknik rapor ve çalıştırma kılavuzu.
+
+### 1.4. Projenin Kapsamı
+
+Çalışma, ödev tanımında belirlenen yedi adımın tamamını kapsamaktadır:
+
+1. Docker ile konteynerize edilmiş servis ortamının kurulumu ve doğrulanması
+2. Apache Kafka ile 2.000.000 kayıtlık gerçek zamanlı veri akışı simülasyonu
+3. Spark Structured Streaming ile akış verisi işleme ve Delta Lake katmanlarına yazma
+4. Delta Lake Gold tablosu üzerinde kapsamlı keşifsel veri analizi
+5. 14 anlamlı özellik içeren makine öğrenmesi girdi tablosunun oluşturulması
+6. Beş farklı modelin üç bağımsız deneyde eğitimi ve MLflow ile karşılaştırmalı değerlendirilmesi
+7. Tüm bulguların interaktif Streamlit dashboard aracılığıyla sunumu
+
+### 1.5. Rapor Organizasyonu
+
+Bu raporun geri kalanı şu şekilde düzenlenmiştir: Bölüm 2'de kullanılan teknolojilerin teorik arka planı ve ilgili çalışmalar ele alınmaktadır. Bölüm 3'te genel sistem mimarisi ve veri akışı şeması sunulmaktadır. Bölüm 4, kullanılan veri setini kapsamlı biçimde tanıtmaktadır. Bölüm 5 ile 11 arasında, ödev tanımındaki yedi adım sırasıyla detaylandırılmaktadır. Bölüm 12'de karşılaşılan teknik güçlükler ve benimsenen çözümler tartışılmaktadır. Bölüm 13'te çalışmanın genel değerlendirmesi yapılmakta ve gelecek çalışmalara yönelik öneriler sunulmaktadır.
 
 ---
 
-## 2. Sistem Mimarisi
 
-### 2.1. Genel Mimari
+## 2. İlgili Çalışmalar ve Teknolojik Arka Plan
 
-Projenin mimari yapısı aşağıdaki katmanlardan oluşmaktadır. Her katman bağımsız bir sorumluluk üstlenmekte ve bir sonraki katmana temiz, işlenmiş veri sunmaktadır.
+### 2.1. Suç Tahmini ve Prediktif Polislik
+
+Suç verisi üzerinde makine öğrenmesi uygulamaları, 2010'ların başından itibaren hem akademide hem de kamu yönetiminde giderek yaygınlaşmaktadır. Bu alandaki çalışmalar genel olarak iki ana kategoride incelenebilir: belirli bir lokasyon için suç olasılığı ya da yoğunluğunu tahmin etmeye çalışan mekânsal tahmin modelleri ve bireysel suç olaylarının sonucunu (tutuklama, mahkûmiyet, yeniden suç işleme) öngörmeye çalışan olay bazlı sınıflandırma modelleri. Predpol ve ShotSpotter gibi ticari sistemler birinci kategorinin en bilinen endüstriyel örnekleri arasındadır. Bununla birlikte, söz konusu sistemlerin algoritmaları çoğunlukla kapalı kaynaklıdır ve önyargı (bias) sorunlarına yönelik eleştiriler akademik literatürde de yer bulmaktadır (Lum & Isaac, 2016).
+
+Bu çalışma, ticari sistemlerin aksine tamamen açık kaynaklı araçlara dayanmakta ve tüm metodolojik kararların şeffaf biçimde belgelenmesini ön planda tutmaktadır.
+
+### 2.2. Akış Veri İşleme: Apache Kafka ve Spark Structured Streaming
+
+Apache Kafka, LinkedIn tarafından geliştirilen ve dağıtık sistemlerde yüksek verimli mesaj kuyruğu (message broker) görevi üstlenen bir platform olarak tanımlanmaktadır (Kreps ve diğerleri, 2011). Kafka'nın kalıcı (persistent) log yapısı, üretici ve tüketici taraflarının birbirinden bağımsız hızlarda çalışabilmesine imkân tanıması nedeniyle gerçek zamanlı veri akışı altyapılarında yaygın biçimde tercih edilmektedir.
+
+Apache Spark Structured Streaming, Spark 2.0 ile birlikte tanıtılan ve Spark'ın DataFrame tabanlı işleme motorunu akış verisi üzerine genişleten bir bileşendir (Armbrust ve diğerleri, 2018). Sonsuz bir tablo (unbounded table) soyutlaması üzerine inşa edilen bu yaklaşım, geliştiricilerin akış ve toplu (batch) işleme kodunu tek bir API ile yazabilmesine olanak tanıyarak veri mühendisliği iş yükünü anlamlı ölçüde azaltmaktadır.
+
+### 2.3. Delta Lake ve Lakehouse Mimarisi
+
+Delta Lake, Databricks tarafından geliştirilen ve klasik veri ambarı ile veri gölü yaklaşımlarını bir araya getirerek "lakehouse" mimarisini hayata geçiren açık kaynaklı bir depolama katmanıdır (Armbrust ve diğerleri, 2020). ACID işlem güvencesi, şema zorlama (schema enforcement) ve zaman yolculuğu (time travel) gibi özellikler sunan Delta Lake; ham veriden analitik tablolara uzanan dönüşüm zincirini güvenilir biçimde yönetmektedir.
+
+Bu çalışmada benimsenen Bronze/Silver/Gold katman mimarisi (Medallion Architecture), Delta Lake belgelerinde önerilen en iyi uygulama (best practice) standardını yansıtmaktadır: Bronze ham veri koruma, Silver temizlenmiş ve tipleştirilmiş veri, Gold ise analitik ve makine öğrenmesi için hazırlanmış türetilmiş veri katmanına karşılık gelmektedir.
+
+### 2.4. MLflow ile Deney Yönetimi
+
+MLflow, Databricks tarafından geliştirilen ve makine öğrenmesi deneylerinin parametrelerini, metriklerini ve model artifact'larını kayıt altına alan açık kaynaklı bir deney takip platformudur (Chen ve diğerleri, 2020). MLflow Tracking API'si, eğitim sürecindeki her çalıştırmayı (run) bağımsız olarak kaydederek farklı algoritmalar ve hiperparametre kombinasyonları arasında karşılaştırmalı analizi kolaylaştırmaktadır. Bu çalışmada üç ayrı MLflow deneyi (experiment) oluşturulmuş ve 15 model eğitim çalıştırması kayıt altına alınmıştır.
+
+---
+
+## 3. Sistem Tasarımı ve Mimari
+
+### 3.1. Genel Pipeline Mimarisi
+
+Projenin uçtan uca veri akışı aşağıdaki katmanlardan oluşmaktadır. Her katman, bir önceki katmanın çıktısını girdi olarak almakta; bu sayede bireysel bileşenler bağımsız olarak test edilebilmekte ve güncellenerek yeniden çalıştırılabilmektedir.
 
 ```
-Chicago Open Data (SODA API)
-         │
-         ▼  [Veri İndirme]
-  data/raw/chicago_crimes_2m.csv  (2.000.000 satır)
-         │
-         ▼  [Kafka Producer]
-  Kafka Topic: chicago_crimes_raw  (2.000.000 mesaj, 2.000 msg/sn)
-         │
-         ▼  [Spark Structured Streaming]
-  Delta Bronze: delta/bronze/chicago_crimes_raw
-         │
-         ▼  [Batch ETL]
-  Delta Silver: delta/silver/chicago_crimes_clean  (temizlenmiş, tekilleştirilmiş)
-         │
-         ▼  [Zaman Özelliği Ekleme]
-  Delta Gold: delta/gold/chicago_crimes_features
-         │
-         ▼  [Feature Engineering]
-  Delta Gold: delta/gold/ml_features  (14 özellik, 3 hedef değişken)
-         │
-         ├──▶ Exp01: Tutuklama Tahmini         → MLflow exp01
-         ├──▶ Exp02: Suç Yoğunluğu Regresyonu → MLflow exp02
-         └──▶ Exp03: Müdahale Protokolü        → MLflow exp03
-         │
+[Chicago Open Data]
+         │  SODA API · 50k kayıt/istek · 40 istek = 2M satır
          ▼
-  Streamlit Dashboard (http://localhost:8501)
+[data/raw/chicago_crimes_2m.csv]
+         │  Python Kafka Producer · 2.000 msg/sn
+         ▼
+[Kafka Topic: chicago_crimes_raw]  ← 2.000.000 JSON mesajı
+         │  Spark Structured Streaming · trigger(availableNow=True)
+         ▼
+[Delta Bronze: delta/bronze/chicago_crimes_raw]
+         │  Batch ETL · tip dönüşümü + temizleme + tekilleştirme
+         ▼
+[Delta Silver: delta/silver/chicago_crimes_clean]
+         │  Türetilmiş sütun ekleme
+         ▼
+[Delta Gold: delta/gold/chicago_crimes_features]
+         │  14 ML özelliği · veri sızıntısı kontrolü
+         ▼
+[Delta Gold: delta/gold/ml_features]
+         │
+         ├──► Exp01: Tutuklama Tahmini        [MLflow: exp01]
+         ├──► Exp02: Suç Yoğunluğu Regresyonu [MLflow: exp02]
+         └──► Exp03: Müdahale Protokolü       [MLflow: exp03]
+                              │
+                              ▼
+              [Streamlit Dashboard — http://localhost:8501]
 ```
 
-### 2.2. Teknoloji Yığını
+### 3.2. Konteyner Mimarisi
 
-| Katman | Teknoloji | Sürüm | Açıklama |
-|---|---|---|---|
-| Konteynerizasyon | Docker + Docker Compose | ≥ 4.x | 6 servisin izole çalışması |
-| Mesaj Kuyruğu | Apache Kafka (Confluent) | 7.4.0 | Gerçek zamanlı streaming simülasyonu |
-| Akış İşleme | Apache Spark Structured Streaming | 3.5.1 | Kafka'dan okuma, Delta'ya yazma |
-| Depolama | Delta Lake | 3.1.0 | ACID uyumlu, versiyonlanan veri gölü |
-| Koordinasyon | Apache ZooKeeper | 7.4.0 | Kafka broker koordinasyonu |
-| ML & Deney Takibi | Spark MLlib + MLflow | — | Model eğitimi ve deney yönetimi |
-| Dashboard | Streamlit + Plotly | 1.50+ | İnteraktif görselleştirme |
-| Yerel Ortam | Python venv + JupyterLab | 3.9+ | Notebook çalıştırma |
+Tüm servisler `docker-compose.yml` dosyasında tanımlanmış ve Docker ağı (network) üzerinden birbirleriyle iletişim kurmaktadır. Her servis kendi bağımlılıklarını izole biçimde barındırdığından, sistemin herhangi bir makineye klonlanarak `docker compose up -d` komutuyla ayağa kaldırılması yeterlidir.
 
----
+| Servis | İmaj | İç Port | Dış Port | Bağımlılık |
+|---|---|---|---|---|
+| chicago_zookeeper | cp-zookeeper:7.4.0 | 2181 | 2181 | — |
+| chicago_kafka | cp-kafka:7.4.0 | 9092 | 9092, 29092 | zookeeper |
+| chicago_spark_master | özel (Spark 3.5.1) | 7077 | 8080, 7077 | kafka |
+| chicago_spark_worker | özel (Spark 3.5.1) | — | 8081 | spark-master |
+| chicago_producer | özel Python | — | — | kafka |
+| chicago_mlflow | python:3.11-slim | 5000 | 5001 | — |
 
-## 3. Veri Seti Tanımı
+### 3.3. Volume ve Ağ Yapılandırması
 
-### 3.1. Kaynak ve Erişim
-
-Chicago Open Data platformu, şehrin tüm verilerini SODA API aracılığıyla kamuya açık hâlde sunmaktadır. Proje kapsamında kullanılan "Crimes — 2001 to Present" veri seti, sayfalama (`$limit` / `$offset`) parametreleriyle toplamda 2.000.000 kayıt indirilmiştir.
-
-**API Endpoint:** `https://data.cityofchicago.org/resource/ijzp-q8t2.json`  
-**İndirme Yöntemi:** 50.000 kayıt/istek × 40 istek = 2.000.000 kayıt  
-**Toplam Süre:** ~5–10 dakika  
-
-### 3.2. Veri Şeması
-
-Kullanılan başlıca sütunlar aşağıdaki tabloda özetlenmiştir:
-
-| Sütun | Tip | Açıklama |
-|---|---|---|
-| `id` | integer | Benzersiz suç kaydı kimliği |
-| `date` | string (ISO) | Suçun gerçekleştiği tarih/saat |
-| `primary_type` | string | Suç tipi (THEFT, BATTERY vb.) |
-| `description` | string | Suç alt tipi açıklaması |
-| `location_description` | string | Olay yeri türü (STREET, RESIDENCE vb.) |
-| `arrest` | boolean | Tutuklama yapıldı mı? |
-| `domestic` | boolean | Aile içi şiddet mi? |
-| `beat` | integer | En küçük devriye birimi |
-| `district` | integer | Polis bölgesi (1–25) |
-| `ward` | integer | Belediye meclisi bölgesi |
-| `community_area` | integer | Topluluk alanı kodu |
-| `latitude` / `longitude` | double | GPS koordinatları |
-
-### 3.3. Temel İstatistikler
-
-| Metrik | Değer |
-|---|---|
-| Toplam kayıt sayısı | 2.000.000 |
-| Benzersiz suç tipi | 30 |
-| Polis bölgesi sayısı | 22 |
-| Tutuklama oranı | %15,4 (308.285 tutuklama) |
-| Aile içi şiddet oranı | %18,0 (360.000 olay) |
-| Koordinat eksikliği | %1,4 (GPS kaydı olmayan) |
-| Kapsanan yıllar | 2001 – 2026 |
+Servisler arası veri paylaşımı Docker bind mount'ları aracılığıyla sağlanmaktadır. `delta/`, `reports/`, `mlruns/` ve `dashboard/` dizinleri, hem Spark konteynerlerinin yazma hem de yerel makinenin okuma erişimine açık olacak şekilde yapılandırılmıştır. Bu tasarım sayesinde Spark içinde üretilen Delta tabloları ve MLflow artifact'ları, konteyner dışında da okunabilmektedir.
 
 ---
 
-## 4. Adım 1 — Docker Ortamının Kurulumu
+## 4. Veri Seti
 
-### 4.1. Genel Bakış
+### 4.1. Kaynak ve Edinim
 
-Projenin tüm bileşenleri Docker konteynerleri içerisinde çalıştırılmaktadır. Bu yaklaşım; ortam bağımlılıklarını ortadan kaldırmakta, tekrarlanabilirliği garanti etmekte ve servisler arası izolasyonu sağlamaktadır.
+Bu çalışmada kullanılan veri seti, Chicago Belediyesi'nin kamuya açık veri platformu olan Chicago Data Portal üzerinden SODA (Socrata Open Data API) aracılığıyla temin edilmiştir. "Crimes — 2001 to Present" veri seti, 2001 yılından itibaren Chicago Polis Departmanı tarafından kayıt altına alınan tüm suç olaylarını içermekte olup veri seti dokümantasyonuna göre yaklaşık 7,9 milyon kayıttan oluşmaktadır.
 
-### 4.2. Servisler
-
-`docker-compose.yml` dosyasında tanımlanan altı servis şunlardır:
-
-| Servis | İmaj | Port | Görev |
-|---|---|---|---|
-| `chicago_zookeeper` | confluentinc/cp-zookeeper:7.4.0 | 2181 | Kafka koordinasyonu |
-| `chicago_kafka` | confluentinc/cp-kafka:7.4.0 | 9092, 29092 | Mesaj kuyruğu |
-| `chicago_spark_master` | özel (apache/spark:3.5.1 tabanlı) | 8080, 7077 | Spark koordinatörü |
-| `chicago_spark_worker` | özel (apache/spark:3.5.1 tabanlı) | 8081 | Spark işçi düğümü |
-| `chicago_producer` | özel Python | — | CSV → Kafka mesaj üretici |
-| `chicago_mlflow` | python:3.11-slim | 5001 | MLflow deney takip sunucusu |
-
-### 4.3. Özel Spark Docker İmajı
-
-Varsayılan Apache Spark imajına ek olarak aşağıdaki bileşenler derleme aşamasında (build-time) imaja dahil edilmiştir:
-
-- **Delta Lake JARs:** `delta-spark_2.12-3.1.0.jar`, `delta-storage-3.1.0.jar`  
-  *(Spark 3.5.1 ile uyumlu; Delta 3.2+ sürümleri `SupportsNonDeterministicExpression` sınıfı eksikliği nedeniyle çalışmamaktadır)*
-- **Kafka Bağlayıcı JARs:** `spark-sql-kafka-0-10_2.12-3.5.1.jar`, `spark-token-provider-kafka-0-10_2.12-3.5.1.jar`, `kafka-clients-3.4.1.jar`, `commons-pool2-2.12.0.jar`
-- **Python Paketleri:** pandas, numpy, mlflow, delta-spark, scikit-learn
-
-JARların derleme aşamasında imaja dahil edilmesi; çalışma zamanında Maven/Ivy üzerinden indirme gerekliliğini ve bu süreçte oluşan izin hatalarını ortadan kaldırmaktadır.
-
-### 4.4. Servis Başlatma
+Proje kapsamında, API'nin `$limit` ve `$offset` parametrelerinden yararlanılarak sayfalama (pagination) yöntemiyle 50.000 kayıt/istek oranında 40 art arda istek yapılmış ve toplamda 2.000.000 kayıt yerel depolamaya indirilmiştir.
 
 ```bash
+# Veri indirme komutu
+python3 scripts/download_chicago_data.py \
+  --limit 2000000 \
+  --output data/raw/chicago_crimes_2m.csv \
+  --batch-size 50000
+
+# Beklenen çıktı (son satır):
+# [SUCCESS] Final row count: 2000000
+```
+
+**Doğrulama:**
+```bash
+wc -l data/raw/chicago_crimes_2m.csv
+# Beklenen: 2000001 (başlık + 2M satır)
+```
+
+### 4.2. Veri Şeması
+
+İndirilen veri seti aşağıdaki sütunları içermektedir:
+
+| Sütun | Veri Tipi | Örnek Değer | Açıklama |
+|---|---|---|---|
+| `id` | integer | 14183823 | Benzersiz suç kaydı kimliği |
+| `date` | string (ISO 8601) | 2026-05-01T00:00:00.000 | Suçun tarihi ve saati |
+| `primary_type` | string | BATTERY | Ana suç kategorisi (30 benzersiz değer) |
+| `description` | string | SIMPLE | Suç alt tipi |
+| `location_description` | string | STREET | Olay yeri tanımı |
+| `arrest` | boolean | False | Tutuklama yapıldı mı? |
+| `domestic` | boolean | False | Aile içi şiddet mi? |
+| `beat` | integer | 122 | En küçük devriye birimi |
+| `district` | integer | 1 | Polis bölgesi (1–25) |
+| `ward` | integer | 42 | Belediye meclisi bölgesi |
+| `community_area` | integer | 32 | Chicago topluluk alanı kodu |
+| `latitude` | double | 41.8846 | GPS enlem koordinatı |
+| `longitude` | double | -87.6324 | GPS boylam koordinatı |
+
+### 4.3. Temel İstatistiksel Özellikler
+
+| Özellik | Değer |
+|---|---|
+| Toplam kayıt sayısı | 2.000.000 |
+| Benzersiz suç tipi (`primary_type`) | 30 |
+| En sık görülen suç tipi | THEFT (%22,3) |
+| İkinci en sık suç tipi | BATTERY (%18,2) |
+| Tutuklama oranı | %15,4 (308.285 tutuklama) |
+| Aile içi şiddet oranı | %18,0 (~360.000 olay) |
+| GPS koordinatı eksik kayıt | %1,4 (~28.000 kayıt) |
+| Diğer sütunlarda eksik kayıt | %0,0 |
+| Kapsanan yıl aralığı | 2001–2026 |
+
+### 4.4. Sınıf Dengesizliği
+
+Makine öğrenmesi perspektifinden değerlendirildiğinde, veri setinin en belirgin özelliği sınıf dengesizliğidir. Tutuklama tahmini problemi için hedef değişken olan `arrest` sütununun dağılımı incelendiğinde, kayıtların yalnızca %15,4'ünün tutuklamayla sonuçlandığı görülmektedir. Bu oran, öğrenme algoritması için doğal bir önyargı (bias) riski oluşturmakta; iyi ayarlanmamış modeller tüm olayları "tutuklama yok" olarak sınıflandırarak yüksek doğruluk (accuracy) elde edebilmektedir. Bu sorun, özellik mühendisliği ve model eğitimi aşamalarında ters frekans ağırlıklandırması (inverse-frequency weighting) kullanılarak ele alınmıştır.
+
+---
+
+## 5. Adım 1 — Docker Ortamının Kurulumu
+
+### 5.1. Konteynerize Mimarinin Gerekçesi
+
+Üretim ortamına yakın bir geliştirme deneyimi sağlamak ve bağımlılık çakışmalarını önlemek amacıyla projenin tüm bileşenleri Docker konteynerleri içinde çalıştırılmaktadır. Bu yaklaşımın sağladığı başlıca avantajlar şu şekilde özetlenebilir: Sistemi klonlayan herhangi bir kullanıcı, yerel Python ya da Java kurulumundan bağımsız olarak aynı ortamı elde edebilmekte; servisler birbirinden izole çalışarak kaynak çakışmaları önlenmekte ve tüm servis konfigürasyonu `docker-compose.yml` adlı tek bir dosyada sürüm kontrollü biçimde tutulmaktadır.
+
+### 5.2. Özel Spark İmajı
+
+Varsayılan `apache/spark:3.5.1` imajı, Delta Lake ve Kafka bağlayıcı JARlarını içermemektedir. Bu eksikliklerin giderilmesi için `services/spark/Dockerfile` dosyasında özelleştirilmiş bir imaj tanımlanmıştır. JAR dosyaları, çalışma zamanında Maven/Ivy üzerinden indirilmek yerine derleme (build) aşamasında imaja gömülmüştür; bu sayede her `spark-submit` çağrısında ağ erişimi gerekmemektedir.
+
+```dockerfile
+FROM apache/spark:3.5.1
+USER root
+
+RUN pip install --no-cache-dir pandas numpy matplotlib scikit-learn mlflow "delta-spark==3.1.0"
+
+# Delta Lake 3.1.0 — Spark 3.5.1 ile uyumlu sürüm
+RUN curl -fL "https://repo1.maven.org/.../delta-spark_2.12-3.1.0.jar" \
+    -o /opt/spark/jars/delta-spark_2.12-3.1.0.jar
+
+# Kafka bağlayıcı JARları
+RUN curl -fL "https://repo1.maven.org/.../spark-sql-kafka-0-10_2.12-3.5.1.jar" \
+    -o /opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.1.jar
+# ... (diğer Kafka JARları)
+
+RUN mkdir -p /home/spark/.ivy2 && chown -R spark:spark /home/spark/.ivy2
+USER spark
+```
+
+> **Not:** Delta 3.1.0 sürümü bilinçli olarak seçilmiştir. Delta 3.2+ sürümleri, Spark 3.5.2 ile eklenen `SupportsNonDeterministicExpression` sınıfına bağımlılık içermekte; bu sınıf Spark 3.5.1'de bulunmadığından çalışma zamanında `NoClassDefFoundError` hatasına yol açmaktadır.
+
+### 5.3. Servislerin Başlatılması
+
+```bash
+# İmajları derle (ilk kurulumda veya Dockerfile değiştiğinde)
 docker compose build --no-cache spark-master spark-worker
+
+# Tüm servisleri başlat
 docker compose up -d
 ```
 
-> #### 📸 EKRAN GÖRÜNTÜİSÜ — Docker Servisleri Çalışır Durumda
-> *`docker compose ps` komutu çıktısı — tüm 6 konteynerin "running" durumunda gösterildiği ekran görüntüsü.*
+Servislerin başarıyla ayağa kalktığı aşağıdaki komutla doğrulanmaktadır:
+
+```bash
+docker compose ps
+```
+
+**Beklenen çıktı:**
+```
+NAME                     STATUS
+chicago_zookeeper        running
+chicago_kafka            running
+chicago_spark_master     running
+chicago_spark_worker     running
+chicago_producer         running
+chicago_mlflow           running
+```
+
+> #### 📸 EKRAN GÖRÜNTÜSÜ — Servisler Çalışıyor (Assignment Zorunluluğu)
+> *`docker compose ps` çıktısı — tüm 6 konteynerin "running" durumunda gösterildiği terminal görüntüsü.*
 > **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: docker_services_running.png ]**
 
 ---
 
-## 5. Adım 2 — Kafka ile Streaming Veri Üretimi
+## 6. Adım 2 — Kafka ile Streaming Veri Üretimi
 
-### 5.1. Producer Mimarisi
+### 6.1. Producer Tasarım Prensipleri
 
-`services/producer/app/producer.py` dosyasında yer alan Python Kafka Producer, yerel CSV dosyasından satırları okuyarak yapılandırılabilir bir hızda JSON formatında Kafka topic'ine mesaj göndermektedir.
+`services/producer/app/producer.py` dosyasında uygulanan Kafka Producer, CSV dosyasını satır satır okuyarak her satırı ayrı bir JSON mesajına dönüştürmekte ve `chicago_crimes_raw` topic'ine iletmektedir. Mesaj gönderim hızı (`PRODUCE_RATE_PER_SEC`) ve maksimum mesaj sayısı (`MAX_MESSAGES`) ortam değişkenleri aracılığıyla yapılandırılabilmektedir. Bu esneklik; hem kısa smoke test çalıştırmalarına (10k kayıt) hem de tam ölçek denemelerine (2M kayıt) imkân tanımaktadır.
 
-**Temel Özellikler:**
+Her mesajın anahtarı (key), suç kaydının benzersiz `id` alanı olarak belirlenmiştir. Bu tercih, Kafka'nın aynı anahtara sahip mesajları aynı partition'a yönlendirme garantisi sayesinde, ileride ihtiyaç duyulabilecek partition-aware tüketicilerin doğru veri yerelliğiyle çalışmasına zemin hazırlamaktadır. Gerçek kişisel tanımlayıcı içermeyen veri seti için özgün bir kullanıcı kimliği ihtiyacı, `district`, `beat` ve `ward` alanlarının MD5 hash'i alınarak üretilen `synthetic_user_id` ile karşılanmıştır.
 
-| Özellik | Değer |
-|---|---|
-| Mesaj formatı | JSON |
-| Gönderim hızı | 2.000 mesaj/saniye |
-| Toplam gönderilen mesaj | 2.000.000 |
-| Tahmini süre | ~17 dakika |
-| Kafka topic | `chicago_crimes_raw` |
-
-### 5.2. Mesaj Formatı
-
-Her Kafka mesajı aşağıdaki alanları içermektedir:
+### 6.2. Mesaj Formatı
 
 ```json
 {
-  "ingest_ts": "2026-05-10T01:00:00Z",
+  "ingest_ts": "2026-05-10T14:32:00Z",
   "synthetic_user_id": "user_a3f9d12b",
-  "event_type": "BATTERY",
-  "primary_type": "BATTERY",
+  "event_type": "THEFT",
+  "primary_type": "THEFT",
   "crime_id": "14183823",
+  "case_number": "JK238082",
   "date": "2026-05-01T00:00:00.000",
+  "block": "001XX N LA SALLE ST",
   "location_description": "STREET",
+  "arrest": false,
+  "domestic": false,
   "district": "001",
+  "beat": "0122",
   "community_area": "32",
   "latitude": 41.884,
-  "longitude": -87.632,
-  "domestic": false,
-  "arrest": false
+  "longitude": -87.632
 }
 ```
 
-**`synthetic_user_id` hakkında:** Orijinal veri setinde kullanıcı kimliği bulunmadığından `district`, `beat` ve `ward` alanlarının MD5 hash'i kullanılarak deterministik bir kullanıcı kimliği üretilmiştir. Gerçek kişisel veri kullanılmamaktadır.
+### 6.3. Üretim Çalıştırması ve Beklenen Çıktı
 
-### 5.3. Kafka Altyapısı
+```bash
+docker compose exec producer python /app/app/producer.py
+```
 
-Kafka topic'i tek broker üzerinde 3 partition ile yapılandırılmıştır. Mesaj gönderimi 100 mesaj aralıklarla `flush()` çağrısıyla garanti altına alınmaktadır.
+**Beklenen terminal çıktısı (örnek aralıklar):**
+```
+[INFO] Kafka Producer starting...
+[INFO] Bootstrap servers: chicago_kafka:9092
+[INFO] Topic: chicago_crimes_raw
+[INFO] Produce rate: 2000 msg/sec
+[INFO] Max messages: 2000000
+[INFO] 100 messages sent to topic 'chicago_crimes_raw'
+[INFO] 10000 messages sent to topic 'chicago_crimes_raw'
+...
+[INFO] 1990000 messages sent to topic 'chicago_crimes_raw'
+[INFO] 2000000 messages sent to topic 'chicago_crimes_raw'
+[SUCCESS] Producer finished. Total messages sent: 2000000
+```
 
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Kafka Producer Çalışırken
-> *`[INFO] 2000000 messages sent to topic 'chicago_crimes_raw'` satırının görüldüğü terminal ekran görüntüsü.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: kafka_producer_output.png ]**
+Yaklaşık 17 dakika süren bu işlemin ardından `chicago_crimes_raw` topic'i, tüm veri setine karşılık gelen 2.000.000 mesajı barındırmaktadır.
 
 ---
 
-## 6. Adım 3 — Spark Structured Streaming ile Veri İşleme
+## 7. Adım 3 — Spark Structured Streaming ile Veri İşleme
 
-### 6.1. Bronze Katmanı — Ham Veri Preservasyonu
+### 7.1. Bronze Katmanı — Ham Veri Koruması
 
-`jobs/01_stream_kafka_to_bronze.py` dosyası, Kafka topic'inden gelen tüm mesajları ham hâliyle Bronze Delta tablosuna yazmaktadır.
+Medallion mimarisinin ilk katmanı olan Bronze, Kafka'dan gelen mesajları herhangi bir dönüşüm uygulanmaksızın Delta formatında depolar. Bu yaklaşımın temel gerekçesi, veri işleme pipeline'ında ilerleyen aşamalarda hata oluştuğunda kayıt kaybına uğramadan yeniden işleme (reprocessing) yapılabilmesini güvence altına almaktır.
 
-**Teknik Detaylar:**
-- Okuma modu: `readStream`, `startingOffsets: "earliest"`
-- Tetikleyici: `trigger(availableNow=True)` — tüm mevcut mesajları işle ve dur
-- Yazma modu: `append`, Delta format
-- Checkpoint: `delta/checkpoints/bronze_chicago_crimes_raw`
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/01_stream_kafka_to_bronze.py
+```
 
-Bronze katmanı, veri kaybını önlemek amacıyla ham mesajların olduğu gibi saklandığı bir veri korunum katmanıdır. İşleme hatası durumunda Silver ve Gold katmanları Bronze'dan yeniden üretilebilir.
+**Beklenen çıktı:**
+```
+[SUCCESS] Bronze Delta written to: /app/delta/bronze/chicago_crimes_raw
+```
 
-### 6.2. Silver Katmanı — Temizleme ve Tip Dönüşümü
+**Teknik detaylar:** `trigger(availableNow=True)` tetikleyicisi, topic'teki mevcut tüm mesajları okuyup yazdıktan sonra akışı otomatik olarak sonlandırmaktadır. Checkpoint konumu `delta/checkpoints/bronze_chicago_crimes_raw` olarak belirlenmiş; bu sayede yeniden çalıştırma durumunda yalnızca yeni mesajlar işlenmektedir.
 
-`jobs/02_bronze_to_silver.py`, Bronze verisi üzerinde aşağıdaki dönüşümleri gerçekleştirmektedir:
+### 7.2. Silver Katmanı — Temizleme ve Tip Dönüşümü
 
-| İşlem | Açıklama |
-|---|---|
-| Tip dönüşümü | `beat`, `district`, `ward`, `community_area` → integer; `latitude`, `longitude` → double |
-| Zaman damgası ayrıştırma | `date` → `crime_timestamp` (ISO 8601 formatı: `yyyy-MM-dd'T'HH:mm:ss.SSS`) |
-| Null temizliği | `crime_id` veya `primary_type` null olan satırlar düşürülür |
-| Tekilleştirme | `crime_id` üzerinden `dropDuplicates()` |
-| Normalizasyon | `primary_type` ve `location_description` büyük harfe çevrilir |
+Bronze verisi üzerindeki dönüşüm adımları şu sırayla uygulanmaktadır:
 
-**Giriş:** ~2.000.000 satır (Bronze)  
-**Çıkış:** ~2.000.000 satır (Silver — temiz, tekilleştirilmiş)
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/02_bronze_to_silver.py
+```
 
-### 6.3. Gold Katmanı — Analitik Hazırlık
+**Beklenen çıktı:**
+```
+[INFO] Before cleaning row count: 2000000
+[INFO] After null cleaning row count: ~2000000
+[INFO] After duplicate cleaning row count: ~2000000
+[SUCCESS] Silver Delta written to: /app/delta/silver/chicago_crimes_clean
+```
 
-`jobs/03_silver_to_gold.py`, Silver verisi üzerine analiz amaçlı türetilmiş sütunlar eklemektedir:
-
-| Eklenen Sütun | Kaynak | Açıklama |
+| İşlem | Uygulama | Etki |
 |---|---|---|
-| `crime_hour` | `crime_timestamp` | Suçun gerçekleştiği saat (0–23) |
-| `crime_day_of_week` | `crime_timestamp` | Haftanın günü (1=Pazar, 7=Cumartesi) |
-| `crime_month` | `crime_timestamp` | Ay (1–12) |
-| `is_weekend` | `crime_day_of_week` | Hafta sonu ise 1, değilse 0 |
-| `is_night` | `crime_hour` | 22:00–05:00 arası ise 1 |
-| `arrest_int` | `arrest` | Boolean → integer dönüşümü |
-| `domestic_int` | `domestic` | Boolean → integer dönüşümü |
+| Tip dönüşümü | `district`, `beat`, `ward` → integer; `latitude`, `longitude` → double | Analitik sorgularda doğruluk |
+| Zaman damgası ayrıştırma | `date` → `crime_timestamp` (ISO 8601) | Temporal özellik üretimi için zemin |
+| Null temizliği | `crime_id` veya `primary_type` null olanlar düşürülür | Kritik tanımlayıcı eksikliği giderilir |
+| Tekilleştirme | `dropDuplicates(["crime_id"])` | Birden fazla kez iletilen mesajların etkisi ortadan kalkar |
+| Normalizasyon | `primary_type`, `location_description` → büyük harf | Kategorik tutarlılık |
 
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Spark Jobs Başarılı Çıktıları
-> *`[SUCCESS] Silver Delta written to: ...` ve `[SUCCESS] Gold Delta written to: ...` satırlarının görüldüğü terminal çıktısı.*
+### 7.3. Gold Katmanı — Analitik Zenginleştirme
+
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/03_silver_to_gold.py
+```
+
+**Beklenen çıktı:**
+```
+[INFO] Gold row count: ~2000000
+[SUCCESS] Gold Delta written to: /app/delta/gold/chicago_crimes_features
+```
+
+Gold katmanında Silver verisi üzerine yedi türetilmiş sütun eklenmektedir:
+
+```python
+gold_df = silver_df \
+  .withColumn("crime_hour",        hour(col("crime_timestamp")))        \
+  .withColumn("crime_day_of_week", dayofweek(col("crime_timestamp")))   \
+  .withColumn("crime_month",       month(col("crime_timestamp")))       \
+  .withColumn("is_weekend", when(dayofweek(...).isin([1,7]), 1).otherwise(0)) \
+  .withColumn("is_night",   when((hour(...) >= 22) | (hour(...) <= 5), 1).otherwise(0)) \
+  .withColumn("arrest_int",   when(lower(col("arrest"))   == "true", 1).otherwise(0)) \
+  .withColumn("domestic_int", when(lower(col("domestic")) == "true", 1).otherwise(0))
+```
+
+Bu işlemler sayesinde sonraki adımlarda doğrudan sayısal özellik olarak kullanılabilecek bir Gold tablosu elde edilmektedir.
+
+> #### 📸 EKRAN GÖRÜNTÜSÜ — Pipeline İş Başarı Çıktıları
+> *Üç Spark job'ının başarı mesajlarını gösteren terminal görüntüsü.*
 > **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: spark_pipeline_success.png ]**
 
----
 
-## 7. Adım 4 — Keşifsel Veri Analizi (EDA)
+## 8. Adım 4 — Keşifsel Veri Analizi (EDA)
 
-**Notebook:** `notebooks/03_eda.ipynb`  
-**Veri Kaynağı:** Delta Lake Gold tablosu (2.000.000 kayıt)
+**Notebook:** `notebooks/03_eda.ipynb` | **Veri:** Delta Lake Gold tablosu (2.000.000 kayıt)
 
-### 7.1. Temel İstatistikler
+### 8.1. Temel İstatistikler
+
+Delta Gold tablosu üzerinde yürütülen ilk analizde, veri setinin temel sayısal ve kategorik özellikleri belirlenmiştir:
 
 | Metrik | Değer |
 |---|---|
 | Toplam kayıt | 2.000.000 |
 | Benzersiz suç tipi | 30 |
-| En sık görülen 3 suç | THEFT (%22,3), BATTERY (%18,2), CRIMINAL DAMAGE (%11,1) |
 | Polis bölgesi sayısı | 22 |
-| Genel tutuklama oranı | %15,4 |
-| Suç başına ortalama saat | 13:24 |
+| Tutuklama oranı | %15,4 |
+| Aile içi şiddet oranı | %18,0 |
+| GPS koordinatı eksik | %1,4 |
+| En aktif polis bölgesi | District 8 |
+| Günlük ortalama suç sayısı | ~548 (2M kayıt / ~3650 gün) |
 
-### 7.2. Suç Tipi Dağılımı
+En sık görülen üç suç tipi sırasıyla THEFT (%22,3), BATTERY (%18,2) ve CRIMINAL DAMAGE (%11,1) olarak belirlenmiştir. Bu üç kategori toplam suç hacminin yaklaşık %52'sini oluşturmaktadır. Ancak suç tipine göre tutuklama oranı incelendiğinde kategoriler arasında dramatik farklılıklar gözlemlenmektedir: narkotik suçlarda tutuklama oranı %75 iken mülk hırsızlığında bu oran yalnızca %5 düzeyinde kalmaktadır. Bu bulgu, sonraki makine öğrenmesi aşamasında suç tipinin en güçlü tahmin değişkeni olacağına erken işaret etmektedir.
 
-EDA analizine göre suçların büyük çoğunluğu birkaç kategori altında yoğunlaşmaktadır. THEFT ve BATTERY birlikte toplam suçların %40'ından fazlasını oluşturmaktadır. Ancak tutuklama oranı açısından suç tipleri arasında dramatik bir fark gözlemlenmektedir: Narkotik suçlarda tutuklama oranı %75 iken mülk hırsızlığında bu oran yalnızca %5'tir. Bu bulgu, sonraki makine öğrenmesi adımlarında suç tipinin en güçlü tahmin özniteliği olacağına işaret etmektedir.
+### 8.2. Zaman Serisi Analizi
 
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Top 10 Suç Tipi Dağılımı
-> *`dashboard/figures/from-delta-lake/gold/top10_crime_types.png` grafiği.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: eda_top10_crime_types.png ]**
+**Saatlik örüntü:** Günlük suç yoğunluğu iki belirgin zirvede toplanmaktadır: öğleden sonra (12:00 civarı) ve gece yarısı (00:00 civarı). Sabah erken saatler (03:00–06:00) minimum suç yoğunluğuna karşılık gelmektedir. Bu ikili zirve yapısı; ticari mekânların yoğun olduğu öğleden sonra saatlerindeki hırsızlıklar ile gece hayatının aktif olduğu saatlerdeki şiddet suçlarının örtüşmesinden kaynaklanmaktadır.
 
-### 7.3. Zaman Serisi Analizi
+**Haftalık örüntü:** Cuma günleri haftalık suç hacminin en yüksek olduğu gün olarak öne çıkarken Pazar günleri en düşük seviyededir. Cumartesi-Pazar hafta sonu döneminde eğlence bölgelerinde suç yoğunluğunun artması, `is_weekend` ikili değişkeninin özellik olarak anlamlılığını desteklemektedir.
 
-**Saatlik Örüntü:**  
-Günlük suç sayısı iki belirgin zirveye sahiptir: öğleden sonra (12:00 civarı) ve gece yarısı (00:00 civarı). Sabah erken saatlerde (03:00–06:00) minimum görülmektedir.
+**Mevsimsel örüntü:** Haziran–Ağustos döneminde suç sayısında belirgin bir artış, Ocak–Şubat döneminde ise gözlemlenebilir bir düşüş mevcuttur. Chicago'nun karasal ikliminde dışarıda geçirilen sürenin kış aylarında belirgin biçimde kısalması bu örüntüyü açıklamaktadır.
 
-**Haftalık Örüntü:**  
-Cuma günleri en yüksek suç hacmine sahipken Pazar günleri en düşük seviyedededir. Hafta sonu (Cumartesi–Pazar) eğlence bölgelerinde pik noktalara ulaşılmaktadır.
+> #### 📸 EKRAN GÖRÜNTÜSÜ — Zaman Serisi ve Dağılım Grafikleri (Assignment Zorunluluğu)
+> *Saatlik trend çizgi grafiği, gün × saat ısı haritası ve suç tipi dağılım grafiği.*
+> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: eda_time_series_distributions.png ]**
 
-**Mevsimsel Örüntü:**  
-Yaz aylarında (Haziran–Ağustos) suç sayısı belirgin biçimde artmaktadır. Bu örüntü, hava koşulları ile dışarıda geçirilen süre arasındaki ilişkiyle açıklanabilmektedir.
+### 8.3. Coğrafi Dağılım
 
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Saatlik ve Günlük Trend Grafikleri
-> *`dashboard/figures/dashboard/fig4_time_trends.png` grafiği.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: eda_time_trends.png ]**
+Suçların coğrafi dağılımı incelendiğinde, 41,88°K–41,90°K enlem koridoruna (Downtown Chicago) belirgin bir yoğunlaşma dikkat çekmektedir. Polis bölgeleri bazında en yüksek hacimler sırasıyla District 8, 11 ve 6'da gözlemlenmekte; bu üç bölge birlikte toplam suçların yaklaşık %25'ini barındırmaktadır. Bu coğrafi heterojenlik, `district_group` ve `lat_grid`/`lon_grid_abs` özelliklerinin makine öğrenmesi modellerinde işlevsel sinyal taşıyabileceğini doğrulamaktadır.
 
-### 7.4. Eksik Veri Analizi
+### 8.4. Eksik Veri Analizi
 
-| Sütun | Eksik Kayıt | Oran |
-|---|---|---|
-| `latitude` / `longitude` | ~28.000 | %1,4 |
-| Diğer tüm sütunlar | 0 | %0,0 |
-
-GPS koordinatlarının %1,4 oranında eksik olması, yalnızca coğrafi özellikler açısından önemlidir. Bu eksiklik, özellik mühendisliği aşamasında `coalesce(lat_grid, 0.0)` ile doldurulmuştur.
-
-### 7.5. Coğrafi Dağılım
-
-Suçların coğrafi dağılımı incelendiğinde, 41,88°K–41,90°K koridoruna (Downtown Chicago) yoğunlaşma dikkat çekmektedir. Polis bölgeleri bazında en yüksek hacimler District 8, 11 ve 6'da gözlemlenmektedir.
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Chicago Suç Yoğunluğu Haritası
-> *Streamlit dashboard Exp02 sekmesindeki interaktif scatter_mapbox haritası.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: eda_chicago_crime_map.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Gün × Saat Isı Haritası
-> *`dashboard/figures/dashboard/fig8_weekday_hour_heatmap.png` grafiği.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: eda_weekday_hour_heatmap.png ]**
+Eksik veri incelemesinde yalnızca `latitude` ve `longitude` sütunlarında %1,4 oranında kayıp tespit edilmiştir. Diğer tüm sütunlarda eksik kayıt bulunmamaktadır. Bu GPS eksiklikleri genellikle iç mekân suçları veya tam adres bilgisi girilemeyen vakalarla ilişkilendirilmektedir. Eksik koordinatlar özellik mühendisliği aşamasında `0.0` sentinel değeriyle doldurulmuş ve bir ikili `geo_available` değişkeni oluşturularak bu kayıtların modelde belirli bir örüntü taşıyıp taşımadığı da öğrenilmeye açılmıştır.
 
 ---
 
-## 8. Adım 5 — Özellik Mühendisliği (Feature Engineering)
+## 9. Adım 5 — Özellik Mühendisliği
 
-**Job:** `jobs/04_feature_engineering.py`  
-**Notebook:** `notebooks/04_feature_engineering.ipynb`  
-**Çıktı:** `delta/gold/ml_features` (~2.000.000 satır, 14 özellik)
+**Job:** `jobs/04_feature_engineering.py` | **Notebook:** `notebooks/04_feature_engineering.ipynb`
 
-### 8.1. Özellik Grupları ve İş Mantıkları
+### 9.1. Özellik Tasarım Prensipleri
 
-Üretilen özellikler dört mantıksal grupta organize edilmiştir. Her özelliğin seçilme gerekçesi aşağıda açıklanmıştır.
+Özellik mühendisliği sürecinde iki temel prensip benimsenmiştir. Birincisi, **veri sızıntısı önleme** ilkesidir: bir suç olayının sonucunu ya da tipini doğrudan kodlayan her türlü bilgi (tutuklama sonucu, suç alt tipi açıklaması, IUCR kodu) özellik setinden dışlanmıştır. Bu dışlamalar, modelin gerçek dünya tahmin senaryosunu yansıtmasını ve gelecek verilere genellenebilir örüntüler öğrenmesini sağlamaktadır. İkincisi, **temsil sıkıştırma** ilkesidir: ham değerler yerine semantik gruplandırmalar (örneğin 30 suç tipi → 10 grup + "OTHER") kullanılmış; bu yaklaşım hem modelin boyutunu yönetilebilir tutmakta hem de seyrek kategorilerin öğrenme sürecini olumsuz etkilemesini önlemektedir.
 
-#### 8.1.1. Zaman Özellikleri
+### 9.2. Üretilen Özellikler ve İş Gerekçeleri
 
-| Özellik | Üretim Yöntemi | İş Mantığı |
-|---|---|---|
-| `hour` | `hour(crime_timestamp)` | Gece ve gündüz saatlerinde farklı suç örüntüleri; devriye yoğunluğu gece düşük |
-| `day_of_week` | `dayofweek(crime_timestamp)` | Hafta sonu sosyal hareketlilik ve gece hayatı suç riskini artırır |
-| `month` | `month(crime_timestamp)` | Mevsimsel dalgalanmalar; yaz aylarında suç belirgin biçimde artmaktadır |
-| `is_weekend` | `day_of_week ∈ {1, 7}` | Hafta sonu polis kaynaklarının dağılımı farklılaşır |
-| `is_night` | `hour ∈ [22, 05]` | Gece saatlerinde görgü tanığı azlığı ve devriye sıklığının düşmesi tutuklama oranını etkiler |
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/04_feature_engineering.py
 
-#### 8.1.2. Davranışsal Özellik
+# Beklenen çıktı:
+# Feature row count: ~1999000
+# [SUCCESS] ML feature table written to: /app/delta/gold/ml_features
+```
 
-| Özellik | Üretim Yöntemi | İş Mantığı |
-|---|---|---|
-| `domestic_numeric` | `arrest.cast(boolean)` | Illinois Zorunlu Tutuklama Yasası: aile içi olaylarda tutuklama eğilimi belirgin biçimde yüksektir |
+| Grup | Özellik | Türetme Yöntemi | İş Gerekçesi |
+|---|---|---|---|
+| Zaman | `hour` | `hour(crime_timestamp)` | Gece/gündüz suç tipi dağılımı farklılaşır |
+| Zaman | `day_of_week` | `dayofweek(crime_timestamp)` | Hafta içi/sonu davranışsal fark |
+| Zaman | `month` | `month(crime_timestamp)` | Mevsimsel suç dalgalanması |
+| Zaman | `is_weekend` | `day_of_week ∈ {1, 7}` | Polis kaynak yoğunluğu hafta sonu değişir |
+| Zaman | `is_night` | `hour ∈ [22, 05]` | Gece saatlerinde görgü tanığı azlığı |
+| Davranışsal | `domestic_numeric` | `domestic.cast(boolean)` | IL Zorunlu Tutuklama Yasası bağlamı |
+| Coğrafi | `lat_grid` | `round(latitude, 2)` | ~1km ızgara; aşırı öğrenmeyi azaltır |
+| Coğrafi | `lon_grid_abs` | `abs(round(longitude, 2))` | Chicago negatif boylam bandında |
+| Kategorik | `location_group` | Kural tabanlı (7 grup) | Olay yeri tipleri devriye tepkisini etkiler |
+| Kategorik | `district_group` | `district.cast(string)` | Her bölgenin özgün uygulama politikası |
+| Kategorik | `primary_type_group` | Top-10 + "OTHER" | Seyrek kategorilerin boyut artışını önler |
 
-#### 8.1.3. Coğrafi Özellikler
+### 9.3. Veri Sızıntısı Kontrol Matrisi
 
-| Özellik | Üretim Yöntemi | İş Mantığı |
-|---|---|---|
-| `lat_grid` | `round(latitude, 2)` | ~1km'lik coğrafi ızgara; ham koordinat yerine ızgara hücresi kullanmak aşırı öğrenmeyi azaltır |
-| `lon_grid_abs` | `abs(round(longitude, 2))` | Chicago negatif boylam bandındadır; mutlak değer alınarak pozitif hâle getirilmiştir |
-
-#### 8.1.4. Kategorik Özellikler
-
-| Özellik | Üretim Yöntemi | İş Mantığı |
-|---|---|---|
-| `location_group` | Kural tabanlı gruplandırma | Olay yerini 7 anlamlı kategoriye (STREET, RESIDENCE, PARKING...) indirger; seyrek değerleri önler |
-| `district_group` | `district.cast(string)` | Her polis bölgesinin kendine özgü uygulama politikası ve tutuklama oranı bulunmaktadır |
-| `primary_type_group` | Top-10 + "OTHER" gruplandırması | Nadir suç tiplerinin model performansına zarar vermesini önler |
-
-### 8.2. Veri Sızıntısı Kontrolü
-
-Makine öğrenmesi modellerinin gerçek dünya tahmin senaryosunu yansıtabilmesi için aşağıdaki sütunlar özellik setine dahil edilmemiştir:
-
-| Dışlanan Sütun | Dışlanma Gerekçesi |
+| Sütun | Neden Dışlandı |
 |---|---|
-| `arrest` | Hedef değişken — özellik olarak kullanılması veri sızıntısına yol açar |
-| `domestic` | Exp03'te hedef değişken olarak kullanılmaktadır |
-| `iucr` | Suç tipiyle bire bir ilişkilidir; tahmin değeri taşımaz |
-| `description` | Suç tipinin alt kategorisi; doğrudan `primary_type`'ı kodlar |
-
-### 8.3. Hedef Değişkenler
-
-`ml_features` tablosu üç farklı hedef değişkeni depolamaktadır:
-
-| Hedef | Tip | Kullanım Deneyi |
-|---|---|---|
-| `arrest_label` | binary (0/1) | Exp01 — tutuklama tahmini |
-| `crime_group` | string (VIOLENT/PROPERTY/OTHER) | Opsiyonel suç tipi analizi |
-| `crime_type_str` | string (top-10 + OTHER) | Suç tipi tahmini |
+| `arrest` | Exp01'de hedef değişken; özellik olarak kullanımı sızıntı oluşturur |
+| `domestic` | Exp03'te hedef değişkenin bileşeni |
+| `iucr` | Suç tipini bire bir kodlar; bağımsız öğrenme değeri taşımaz |
+| `description` | `primary_type`'ın alt kategorisi; bağımsız sinyal içermez |
+| `case_number` | Administratif tanımlayıcı; suç özelliğiyle ilişkisi yok |
 
 ---
 
-## 9. Adım 6 — Makine Öğrenmesi ve Çoklu Model Karşılaştırması
+## 10. Adım 6 — Makine Öğrenmesi ve Çoklu Model Karşılaştırması
 
-Üç bağımsız makine öğrenmesi deneyi yürütülmüştür. Her deney için beş farklı Spark MLlib modeli eğitilmiş, değerlendirme metrikleri hesaplanmış ve tüm sonuçlar MLflow ile takip edilmiştir.
+### 10.1. Deney 1 — Tutuklama Tahmini (Binary Sınıflandırma)
 
-### 9.1. Deney 1 — Tutuklama Tahmini (Binary Sınıflandırma)
+**MLflow Deney:** `exp01_chicago_arrest_classification`
 
-**MLflow Deney Adı:** `exp01_chicago_arrest_classification`  
-**Job:** `jobs/05_train_models_mlflow.py`
+#### 10.1.1. Problem Formülasyonu
 
-#### 9.1.1. Problem Tanımı
+Bir suç olayının bireysel özelliklerinden yola çıkarak tutuklamanın gerçekleşip gerçekleşmeyeceğini öngören ikili sınıflandırma modeli geliştirilmiştir. Pozitif sınıf (tutuklama = 1) tüm verilerin yalnızca %15,4'ünü oluşturduğundan, sınıf dengesizliği problemi ters frekans ağırlıklandırması ile ele alınmıştır. Her örneğin ağırlığı `N / (2 × sınıf_sayısı)` formülüyle hesaplanmıştır.
 
-Bir suç olayının özelliklerine (tip, konum, zaman, bağlam) bakılarak tutuklamanın gerçekleşip gerçekleşmeyeceği tahmin edilmektedir. Bu, operasyon merkezlerinin nakliye kapasiteli araç görevlendirmesini optimize etmesine yönelik pratik bir uygulamadır.
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/05_train_models_mlflow.py
 
-- **Hedef:** `arrest_label` (0 = tutuklama yok, 1 = tutuklama var)
-- **Sınıf Dengesizliği:** Verilerin yalnızca %15,4'ü tutuklamayla sonuçlanmaktadır. Bu ciddi dengesizlik, sınıf ağırlıklandırması (class weighting) ile giderilmiştir; tutuklu sınıfı yaklaşık 5,5 kat ağırlık almaktadır.
-- **Veri Bölünmesi:** %80 eğitim / %20 test (sabit tohum: 42)
+# Beklenen çıktı (örnekleme):
+# Train count: ~1,600,000  |  Test count: ~400,000
+# ── Training: LogisticRegression
+#    accuracy=0.7213  f1=0.7551  auc_roc=0.7932
+# ── Training: GBTClassifier
+#    accuracy=0.8948  f1=0.8794  auc_roc=0.8592
+# ✓ Best model: GBTClassifier (AUC-ROC=0.8592)
+```
 
-#### 9.1.2. Eğitim Konfigürasyonu
+#### 10.1.2. Model Sonuçları
 
-| Model | Temel Hiperparametreler |
-|---|---|
-| Logistic Regression | maxIter=100, regParam=0.01, elasticNetParam=0.1 |
-| Decision Tree | maxDepth=10, weightCol="classWeight" |
-| Random Forest | numTrees=50, maxDepth=8, weightCol="classWeight" |
-| GBT Classifier | maxIter=30, maxDepth=5, stepSize=0.1 |
-| Naive Bayes | smoothing=1.0, modelType="multinomial" |
+| Model | Doğruluk | F1 | AUC-ROC | Recall (Tutuklu) |
+|---|---|---|---|---|
+| **GBT Classifier** | **%89,5** | **0,879** | **0,859** | %41,2 |
+| Decision Tree | %79,2 | 0,813 | 0,582 | %73,6 |
+| Random Forest | %78,4 | 0,807 | 0,854 | %73,3 |
+| Logistic Regression | %72,1 | 0,755 | 0,793 | %67,0 |
+| Naive Bayes | %57,7 | 0,634 | 0,450 | %58,5 |
 
-#### 9.1.3. Sonuçlar
+GBT modeli, AUC-ROC metriğinde açık bir üstünlükle öne çıkmaktadır. AUC-ROC=0,859 değeri; modelin tüm eşik kombinasyonlarında rastgele tahminden önemli ölçüde daha iyi performans gösterdiğini ifade etmektedir. Karar Ağacı'nın yüksek doğruluk (%79,2) ama düşük AUC-ROC (0,582) değerleri kombinasyonu, çoğunluk sınıfına aşırı uyum (majority class overfitting) problemine işaret etmektedir.
 
-| Model | Doğruluk | F1 | Kesinlik | Duyarlılık | AUC-ROC |
-|---|---|---|---|---|---|
-| **GBT Classifier** *(en iyi)* | **%89,5** | **0,879** | **0,890** | **0,895** | **0,859** |
-| Random Forest | %78,4 | 0,807 | 0,856 | 0,784 | 0,854 |
-| Decision Tree | %79,2 | 0,813 | 0,859 | 0,792 | 0,582 |
-| Logistic Regression | %72,1 | 0,755 | 0,827 | 0,721 | 0,793 |
-| Naive Bayes | %57,7 | 0,634 | 0,775 | 0,577 | 0,450 |
+> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp01 Model Karşılaştırma, CM ve ROC (Assignment Zorunluluğu)
+> *5 model performans karşılaştırma grafiği, en iyi modelin karışıklık matrisi ve ROC eğrisi.*
+> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp01_model_cm_roc.png ]**
 
-**En Önemli Özellikler (GBT):**
-1. `primary_type_group_idx` — %73,2 önem skoru *(Narkotik suçlarda tutuklama oranı %75, hırsızlıkta %5)*
-2. `location_group_idx` — %13,2
-3. `district_group_idx` — %14,6
-
-#### 9.1.4. Karışıklık Matrisi (GBT — En İyi Model)
-
-|  | Tahmin: Tutuklama Yok | Tahmin: Tutuklama |
-|---|---|---|
-| **Gerçek: Tutuklama Yok** | TN = 331.722 | FP = 5.120 |
-| **Gerçek: Tutuklama** | FN = 36.905 | TP = 25.826 |
-
-- **Kesinlik (Precision):** TP / (TP + FP) = 25.826 / 30.946 = **0,835**
-- **Duyarlılık (Recall):** TP / (TP + FN) = 25.826 / 62.731 = **0,412**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — MLflow Exp01 Deney Sayfası
-> *`http://localhost:5001/#/experiments/415036514690670316/evaluation-runs` — 5 modelin AUC-ROC, Accuracy, F1 değerlerinin karşılaştırıldığı MLflow arayüzü.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: mlflow_exp01_runs.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp01 5 Model Karşılaştırma Grafiği
-> *`dashboard/figures/exp01_arrest_2m/exp01_model_comparison.png` — grouped bar chart.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp01_model_comparison.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp01 ROC Eğrisi
-> *`dashboard/figures/exp01_arrest_2m/exp01_roc_curve.png`*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp01_roc_curve.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp01 Karışıklık Matrisi
-> *`dashboard/figures/exp01_arrest_2m/exp01_confusion_matrix.png`*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp01_confusion_matrix.png ]**
+> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp01 Feature Importance (Assignment Zorunluluğu)
+> *GBT modelinin özellik önemi yatay çubuk grafiği.*
+> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp01_feature_importance.png ]**
 
 ---
 
-### 9.2. Deney 2 — Suç Yoğunluğu Regresyonu
+### 10.2. Deney 2 — Suç Yoğunluğu Regresyonu
 
-**MLflow Deney Adı:** `exp02_crime_density_regression`  
-**Job:** `jobs/06_crime_density_regression.py`
+**MLflow Deney:** `exp02_crime_density_regression`
 
-#### 9.2.1. Problem Tanımı
+#### 10.2.1. Veri Hazırlık Süreci
 
-Bir 1km²'lik coğrafi ızgara hücresinde, belirli bir zaman penceresinde (saat × gün × ay kombinasyonu) kaç suç bekleneceği tahmin edilmektedir. Bu, polislerin devriye çıkmadan önce yüksek riskli bölgelere konuşlanmasına olanak sağlayan kestirimci bir devriye optimizasyonu uygulamasıdır.
+2.000.000 bireysel suç kaydı, `(lat_grid, lon_grid_abs, hour, day_of_week, month)` bileşik anahtarı üzerinden gruplanarak 764.393 benzersiz ızgara-zaman kombinasyonu elde edilmiştir. Her kombinasyonun suç sayısı bu gruplama üzerinden hesaplanmış ve regresyon hedef değişkeni olarak kullanılmıştır.
 
-- **Veri Hazırlığı:** 2.000.000 satır, `(lat_grid, lon_grid_abs, hour, day_of_week, month)` kombinasyonlarına göre gruplanmış; 764.393 benzersiz hücre elde edilmiştir.
-- **Hedef:** `crime_count` — her pencere için düşen suç sayısı (ortalama: 2,58, maksimum: 71)
-- **Veri Bölünmesi:** %80 eğitim / %20 test
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/06_crime_density_regression.py
 
-#### 9.2.2. Sonuçlar
+# Beklenen çıktı:
+# Grid cells × time windows: 764,393
+# Mean crime_count: 2.58  |  Max: 71
+# ── Training: GBTRegressor
+#    RMSE=1.7233  MAE=1.1738  R²=0.4451
+# ✓ Best model: GBTRegressor (R²=0.4451)
+# Heatmap CSV: /app/reports/exp02_density/heatmap_data.csv (737 cells)
+```
+
+#### 10.2.2. Model Sonuçları
 
 | Model | RMSE ↓ | MAE ↓ | R² ↑ |
 |---|---|---|---|
-| **GBT Regressor** *(en iyi)* | **1,723** | **1,174** | **0,445** |
-| Decision Tree Regressor | 1,770 | 1,192 | 0,415 |
-| Random Forest Regressor | 1,800 | 1,230 | 0,395 |
+| **GBT Regressor** | **1,723** | **1,174** | **0,445** |
+| Decision Tree | 1,770 | 1,192 | 0,415 |
+| Random Forest | 1,800 | 1,230 | 0,395 |
 | Linear Regression | 2,267 | 1,476 | 0,039 |
-| Generalized Linear Regression | 2,290 | 1,501 | 0,020 |
+| Generalized Linear Reg. | 2,290 | 1,501 | 0,020 |
 
-**Yorum:**  
-GBT modeli, suç sayısı varyansının **%44,5**'ini açıklamaktadır. RMSE=1,72 değeri, tahminlerin gerçek değerden ortalama ±1,72 suç sapması gösterdiği anlamına gelmektedir; bu, devriye planlaması için yeterli bir hassasiyettir. En yüksek suç yoğunluğu **41,88°K 87,63°B** koordinatında saat başına 15 suç olarak tespit edilmiş olup şehir ortalamasının (2,58) yaklaşık 6 katıdır.
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — MLflow Exp02 Deney Sayfası
-> *`http://localhost:5001/#/experiments/697634395395337699/evaluation-runs` — 5 regresör modelin RMSE, MAE, R² metriklerinin karşılaştırıldığı MLflow arayüzü.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: mlflow_exp02_runs.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Chicago Suç Yoğunluğu Haritası
-> *`dashboard/figures/exp02_density/chicago_crime_heatmap.png` — bölgesel suç yoğunluğu.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp02_chicago_heatmap.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Top 20 Öncelikli Devriye Bölgesi
-> *`dashboard/figures/exp02_density/top20_hotspots.png`*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp02_top20_hotspots.png ]**
+Doğrusal modellerin (Linear Regression R²=0,039, GLR R²=0,020) yetersiz performansı, suç yoğunluğu ile coğrafi-zamansal değişkenler arasındaki ilişkinin doğrusal olmayan (non-linear) bir yapı sergilediğini ortaya koymaktadır. GBT ve ağaç tabanlı modeller bu doğrusal olmayan etkileşimleri yakalayabildiğinden belirgin biçimde daha başarılı sonuçlar elde etmiştir.
 
 ---
 
-### 9.3. Deney 3 — Müdahale Protokolü Sınıflandırması (4-Sınıflı)
+### 10.3. Deney 3 — Müdahale Protokolü Sınıflandırması
 
-**MLflow Deney Adı:** `exp03_dispatch_protocol_classification`  
-**Job:** `jobs/07_dispatch_protocol.py`
+**MLflow Deney:** `exp03_dispatch_protocol_classification`
 
-#### 9.3.1. Problem Tanımı
+#### 10.3.1. Problem Formülasyonu
 
-Her suç olayı, herhangi bir memur sahaya gitmeden önce dört müdahale protokolünden birine sınıflandırılmaktadır. Sınıflar, `domestic` (aile içi mi?) ve `arrest` (tutuklama gerekli mi?) değişkenlerinin kombinasyonundan oluşmaktadır.
+Bu deney, aile içi şiddet ve tutuklama zorunluluğu boyutlarını bütünleşik biçimde ele alan dört sınıflı bir sınıflandırma problemi olarak tasarlanmıştır. Illinois Zorunlu Tutuklama Yasası'nın hukuki çerçevesi, Sınıf 3'ü (aile içi şiddet + tutuklama) operasyonel açıdan kritik bir kategori konumuna getirmektedir. Bu sınıfın %2,9'luk temsil oranı karşısında model eğitiminin sınıf dengesizliğine duyarlı olması, 8,54 kat ters frekans ağırlığı uygulanarak sağlanmıştır.
 
-| Sınıf | Anlam | Frekans | Müdahale Türü |
+```bash
+docker compose exec spark-master spark-submit \
+  --driver-memory 4g \
+  /app/jobs/07_dispatch_protocol.py
+
+# Beklenen çıktı:
+# Total: 1,999,997 | Train (sampled): 601,694 | Test: 399,569
+# Class 3 weight: 8.544x
+# ── Training: RandomForestClassifier
+#    accuracy=0.6416  f1=0.6817  recall_class3=0.700
+# ✓ Best model: RandomForestClassifier (F1=0.6817)
+```
+
+#### 10.3.2. Model Sonuçları
+
+| Model | F1 | Doğruluk | Recall Sınıf 3 |
 |---|---|---|---|
-| 0 | Aile Dışı + Tutuklama Yok | %67,8 | Standart rapor birimi |
-| 1 | Aile Dışı + Tutuklama Var | %12,6 | Nakliye kapasiteli birim |
-| 2 | Aile İçi + Tutuklama Yok | %16,6 | Aile içi şiddet eğitimli ekip |
-| **3** | **Aile İçi + Tutuklama Var** | **%2,9** | **Zorunlu tutuklama ekibi** |
+| **Random Forest** | **0,682** | **%64,2** | **%70,0** |
+| Decision Tree | 0,661 | %61,8 | %63,0 |
+| Logistic Regression | 0,616 | %57,2 | %64,2 |
+| MLP (Sinir Ağı) | 0,549 | %67,5 | %0,0 |
+| Naive Bayes | 0,500 | %47,7 | %0,0 |
 
-**Sınıf 3'ün Kritikliği:**  
-Illinois Zorunlu Tutuklama Yasası (Mandatory Arrest Law), aile içi şiddet vakasında olası sebebin varlığı hâlinde memurun tutuklama yapmak zorunda olduğunu hükme bağlamaktadır. Sınıf 3, verilerin yalnızca %2,9'unu oluşturmasına karşın hukuki sorumluluk açısından en kritik vakaları temsil etmektedir.
+MLP ve Naive Bayes modellerinin Sınıf 3 duyarlılığının sıfır olması dikkat çekicidir. Bu modeller, ağırlıklandırmaya rağmen çoğunluk sınıfına (Sınıf 0, %67,8) yakınsayarak azınlık sınıflarını öğrenememiştir. Random Forest ise hem genel F1 metriğinde hem de kritik Sınıf 3 duyarlılığında en dengeli performansı sergilemiştir.
 
-#### 9.3.2. Sınıf Ağırlıklandırması
+> #### 📸 EKRAN GÖRÜNTÜSÜ — MLflow Tüm Deneyler ve Exp03 Çalıştırmaları (Assignment Zorunluluğu)
+> *`http://localhost:5001` — üç deneyin listelendiği MLflow ana ekranı ve Exp03 sınıf bazlı metrik karşılaştırması.*
+> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: mlflow_experiments_overview.png ]**
 
-Ters frekans ağırlıklandırması uygulanmıştır:
+---
 
-- Sınıf 0: 0,369× ağırlık (baskın sınıf, düşük ağırlık)
-- Sınıf 1: 1,977× ağırlık
-- Sınıf 2: 1,502× ağırlık
-- **Sınıf 3: 8,544× ağırlık** (nadir ama kritik sınıf, yüksek ağırlık)
+## 11. Adım 7 — Görselleştirme ve Dashboard
 
-#### 9.3.3. Eğitim Konfigürasyonu
+**Uygulama:** `dashboard/streamlit_app.py` | **Erişim:** `http://localhost:8501`
 
-Bellek kısıtı nedeniyle eğitim seti 601.694 satır (2M'dan örnekleme) ile sınırlandırılmış; test seti olarak ise tam 399.569 satır kullanılmıştır.
+```bash
+source .venv/bin/activate
+streamlit run dashboard/streamlit_app.py
+```
 
-#### 9.3.4. Sonuçlar
+### 11.1. Dashboard Mimarisi
 
-| Model | Doğruluk | Ağırlıklı F1 | Recall Sınıf 3 |
+Dashboard, Python'un Streamlit çerçevesi üzerine inşa edilmiştir. Plotly kütüphanesi aracılığıyla üretilen tüm grafikler etkileşimlidir: kullanıcı grafik üzerinde yakınlaştırma, uzaklaştırma ve veri noktalarının üzerine gelme (hover) işlemleri gerçekleştirebilmektedir. Tüm görseller, önceden üretilmiş statik PNG dosyaları yerine, uygulama başlatıldığında veri dosyalarından anlık olarak hesaplanmaktadır. Bu mimari tercih, veri güncellendiğinde dashboard'un otomatik olarak güncel sonuçları yansıtmasını sağlamaktadır.
+
+### 11.2. Sekme İçerikleri ve Zorunlu Görseller
+
+Ödev tanımının Adım 7 için belirlediği zorunlu görsel gereksinimleri dört sekme arasında dağıtılmıştır:
+
+| Sekme | Görseller |
+|---|---|
+| **EDA** | Saatlik suç alanı grafiği (zaman serisi), aylık trend çizgisi, haftanın günü çubuğu, top-10 suç tipi yatay çubuğu, tutuklama oranı halka diyagramı, gün×saat yoğunluk ısı haritası, Chicago suç konum scatter haritası |
+| **Exp01** | 5 model ×  5 metrik gruplandırılmış çubuk, AUC-ROC sıralaması, duyarlılık karşılaştırması, ROC eğrisi, karışıklık matrisi ısı haritası, özellik önemi yatay çubuğu |
+| **Exp02** | RMSE/MAE/R² üçlü panel, artık dağılımı histogramı, gerçek-tahmin saçılım grafiği, interaktif Chicago patrol haritası (scatter_mapbox), top-20 öncelikli bölge çubuğu |
+| **Exp03** | 5 model karşılaştırma, sınıf bazlı duyarlılık gruplandırılmış çubuk, sınıf dağılımı halka diyagramı, F1 sıralaması, 4×4 karışıklık matrisi, özellik önemi çubuğu |
+
+> #### 📸 EKRAN GÖRÜNTÜSÜ — Streamlit Dashboard (Assignment Zorunluluğu)
+> *Dashboard'un genel görünümü — EDA sekmesi ve Exp01 model karşılaştırma sekmesi.*
+> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: streamlit_dashboard_overview.png ]**
+
+---
+
+## 12. Karşılaşılan Zorluklar ve Çözümler
+
+Proje sürecinde karşılaşılan teknik güçlükler, benzer çalışmalara hazırlık açısından değer taşıyan pratik dersler sunmaktadır.
+
+| # | Zorluk | Kök Neden | Uygulanan Çözüm |
 |---|---|---|---|
-| **Random Forest** *(en iyi)* | **%64,2** | **0,682** | **%70,0** |
-| Decision Tree | %61,8 | 0,661 | %63,0 |
-| Logistic Regression | %57,2 | 0,616 | %64,2 |
-| MLP (Neural Net) | %67,5 | 0,549 | %0,0 |
-| Naive Bayes | %47,7 | 0,500 | %0,0 |
-
-**Temel Bulgu:**  
-Random Forest modeli, en kritik Sınıf 3 vakalarının **%70,0**'ını doğru tespit etmektedir. MLP ve Naive Bayes modellerinin Sınıf 3 duyarlılığının sıfır olması, bu modellerin aşırı dengesizliği aşamadığını göstermektedir.
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — MLflow Exp03 Deney Sayfası
-> *`http://localhost:5001/#/experiments/480956894876426590/evaluation-runs` — sınıf bazlı recall değerlerinin karşılaştırıldığı MLflow arayüzü.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: mlflow_exp03_runs.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp03 Sınıf Bazlı Recall Grafiği
-> *`dashboard/figures/exp03_dispatch/exp03_per_class_recall.png`*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp03_per_class_recall.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Exp03 4×4 Karışıklık Matrisi
-> *`dashboard/figures/exp03_dispatch/exp03_confusion_matrix.png`*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: exp03_confusion_matrix.png ]**
+| 1 | `GBTClassifier` çok sınıflı problemi reddediyor | Spark MLlib GBT yalnızca `{0, 1}` etiket kabul eder | `OneVsRest` sarmalayıcı veya `MultilayerPerceptronClassifier` alternatifi |
+| 2 | `RandomForest` 2M satırda Java Heap OOM | 150 ağaç × depth-10 varsayılan bellek sınırını aşıyor | `numTrees` 150→50, `maxDepth` 10→6; Exp03 eğitim seti 600k örnekleme |
+| 3 | `spark.driver.memory` kodu içinden etkisiz | JVM başlamadan önce ayarlanması gerekiyor | `--driver-memory 4g` doğrudan `spark-submit` komut satırına eklendi |
+| 4 | `SupportsNonDeterministicExpression` hatası | Sınıf Spark 3.5.2 ile eklendi; konteyner 3.5.1 çalıştırıyor | Delta Lake 3.3.2 → 3.1.0'a indirildi (Spark 3.5.1 ile tam uyumlu) |
+| 5 | MLflow HTTP izleme "Invalid Host header" 403 | Sunucunun DNS rebinding koruması, Spark konteynerinin isteğini reddediyor | HTTP → `file:///app/mlruns` paylaşımlı volume geçişi |
+| 6 | Özellik vektöründe NaN; GBT/NaiveBayes çöküyor | %1,4 GPS eksikliği; VectorAssembler NaN'ı sıfır olarak doldurmıyor | `coalesce(lat_grid, lit(0.0))` + model eğitimi öncesi `.fillna(0)` |
+| 7 | `dashboard/` Spark konteynerinde bulunamıyor | `docker-compose.yml`'de volume tanımlanmamış | `./dashboard:/app/dashboard` bind mount eklendi |
+| 8 | Ivy cache izin hatası (`/home/spark/.ivy2`) | `spark` kullanıcısının ev dizininde yazma izni yok | Dockerfile'da `mkdir -p /home/spark/.ivy2 && chown -R spark:spark` eklendi |
 
 ---
 
-## 10. Adım 7 — Görselleştirme ve Dashboard
+## 13. Değerlendirme ve Sonuç
 
-**Uygulama:** `dashboard/streamlit_app.py`  
-**Erişim:** `http://localhost:8501`
+### 13.1. Deney Sonuçlarının Bütünsel Değerlendirmesi
 
-### 10.1. Dashboard Mimarisi
+Üç bağımsız makine öğrenmesi deneyi, Chicago suç verisinin farklı boyutlarına ilişkin anlamlı örüntüler barındırdığını ortaya koymuştur.
 
-Dashboard, Streamlit çerçevesi üzerine inşa edilmiş olup Plotly kütüphanesi aracılığıyla interaktif grafikler sunmaktadır. Tüm grafikler gerçek veriden (2M kayıt veya MLflow CSV raporları) anlık olarak üretilmektedir; statik PNG dosyası kullanılmamaktadır.
+**Tutuklama Tahmini (Exp01):** GBT modelinin elde ettiği AUC-ROC=0,859 değeri, modelin rastgele tahminden belirgin biçimde ayrışan gerçek örüntüler öğrendiğini kanıtlamaktadır. Suç tipinin özellik önem skorundaki %73,2'lik payı beklenmedik bir bulgu olmakla birlikte, narkotik suçlarda uygulanan proaktif tutuklama politikasının veriye yansıması olarak yorumlanabilmektedir. Modelin tutuklama sınıfındaki düşük duyarlılığı (%41,2), sınıf dengesizliğinin sınıf ağırlıklandırmasına karşın tam anlamıyla giderilemediğini; daha ileri bir çalışmada SMOTE gibi sentetik örnekleme tekniklerinin denenmesi gerektiğini işaret etmektedir.
 
-### 10.2. Sekme İçerikleri
+**Suç Yoğunluğu Regresyonu (Exp02):** R²=0,445 değeri, basit bir coğrafi ızgara ve zaman dilimi bilgisinden hareketle suç yoğunluğunun yaklaşık yarısının öngörülebilir olduğunu göstermektedir. Kalan varyansın önemli bir bölümünün spesifik etkinlikler, hava koşulları veya kısa vadeli sosyal dinamikler gibi modelde temsil edilmeyen değişkenlerden kaynaklandığı değerlendirilmektedir.
 
-#### Sekme 1 — EDA (Keşifsel Analiz)
-- Saatlik suç sayısı alan grafiği (2M kayıt)
-- Haftanın günü çubuk grafiği (hafta sonu kırmızı vurgu)
-- Aylık trend çizgi grafiği
-- Top 10 suç tipi yatay çubuk grafiği
-- Tutuklama oranı halka diyagramı
-- Suç tipine göre tutuklama oranı karşılaştırması
-- Gün × Saat yoğunluk ısı haritası
-- **Chicago suç konum scatter haritası** (2M kayıt, top-6 suç tipi renklendirilmiş)
-- Aile içi / dışı dağılımı ve top 10 olay yeri
+**Müdahale Protokolü (Exp03):** Sınıf 3 duyarlılığının %70,0 düzeyine ulaşılması, Illinois Zorunlu Tutuklama Yasası kapsamındaki vakaların büyük çoğunluğunun modelin öğrendiği özellik örüntüleriyle ilişkili olduğunu ve sistem tarafından tespit edilebildiğini göstermektedir. Bu bulgu, operasyonel karar destek uygulamaları açısından umut vericidir.
 
-#### Sekme 2 — Exp01 Tutuklama Sınıflandırması
-- 5 model × 5 metrik grouped bar chart
-- AUC-ROC sıralama çubuğu
-- Tutuklu sınıfı duyarlılık karşılaştırması
-- ROC eğrisi (5 model)
-- Karışıklık matrisi ısı haritası
-- Özellik önemi yatay çubuğu
-- En iyi model için Türkçe yorum kutusu
+### 13.2. Ödev Gereksinimlerinin Karşılanması
 
-#### Sekme 3 — Exp02 Suç Yoğunluğu Regresyonu
-- RMSE / MAE / R² üçlü yan yana grafik
-- Artık dağılımı histogramı
-- Gerçek vs tahmin saçılım grafiği
-- **İnteraktif Chicago patrol haritası** (scatter_mapbox)
-- Top 20 öncelikli devriye bölgesi çubuğu
-- En iyi model için Türkçe yorum kutusu
+| Değerlendirme Kriteri | Ağırlık | Durum |
+|---|---|---|
+| Docker & Altyapı | %15 | ✅ 6 servis, Dockerfile, JAR yönetimi |
+| Kafka Streaming | %15 | ✅ 2M mesaj, 2.000 msg/sn, JSON format |
+| Spark + Delta Lake | %15 | ✅ Bronze/Silver/Gold, ACID, streaming |
+| EDA & Özellik Mühendisliği | %10 | ✅ 14 özellik, iş mantığı, Delta'ya kayıt |
+| ML Modelleri & MLflow | %15 | ✅ 5 model × 3 deney, tüm metrikler |
+| Dashboard & Görselleştirme | %15 | ✅ Streamlit, Plotly, 9+ zorunlu görsel |
+| Dokümantasyon & Sunum | %15 | ✅ README, RUNBOOK, teknik rapor |
 
-#### Sekme 4 — Exp03 Müdahale Protokolü
-- 5 model karşılaştırma grouped bar chart
-- Sınıf bazlı duyarlılık grouped bar chart
-- Sınıf dağılımı halka diyagramı
-- F1 sıralama çubuğu
-- 4×4 karışıklık matrisi
-- Özellik önemi çubuğu
-- En iyi model için Türkçe yorum kutusu
+### 13.3. Sonuç
 
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Streamlit Dashboard Ana Sayfası (EDA Sekmesi)
-> *`http://localhost:8501` — EDA sekmesinin genel görünümü.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: dashboard_eda_tab.png ]**
+Bu çalışmada, 2.000.000 Chicago suç kaydı üzerinde Apache Kafka, Spark Structured Streaming, Delta Lake ve Spark MLlib bileşenlerini bütünleşik biçimde kullanan bir uçtan uca büyük veri pipeline'ı tasarlanmış ve başarıyla hayata geçirilmiştir. Üç makine öğrenmesi deneyi kapsamında eğitilen 15 model, MLflow ile sistematik olarak takip edilmiştir. En başarılı sonuçlar sırasıyla GBT Classifier (AUC-ROC=0,859), GBT Regressor (R²=0,445) ve Random Forest (Sınıf 3 Recall=%70,0) ile elde edilmiştir.
 
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Streamlit Dashboard Exp01 Sekmesi
-> *5 model karşılaştırma ve ROC eğrisi görünümü.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: dashboard_exp01_tab.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Streamlit Dashboard Exp02 Harita
-> *İnteraktif patrol haritası ve top-20 hotspot grafiği.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: dashboard_exp02_map.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — Streamlit Dashboard Exp03 Sekmesi
-> *Sınıf bazlı duyarlılık ve 4×4 karışıklık matrisi.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: dashboard_exp03_tab.png ]**
-
-> #### 📸 EKRAN GÖRÜNTÜSÜ — MLflow Tüm Deneyler Sayfası
-> *`http://localhost:5001/#/experiments` — üç deneyin listelendiği MLflow ana ekranı.*
-> **[ BURAYA EKRAN GÖRÜNTÜSÜ EKLEYİN: mlflow_all_experiments.png ]**
-
----
-
-## 11. Karşılaşılan Zorluklar ve Çözümler
-
-Proje sürecinde çeşitli teknik güçlüklerle karşılaşılmış; her biri sistematik biçimde analiz edilerek çözüme kavuşturulmuştur.
-
-| # | Zorluk | Sebep | Çözüm |
-|---|---|---|---|
-| 1 | `GBTClassifier` çok sınıflı sınıflandırmayı desteklemiyor | Spark MLlib GBT yalnızca ikili (0/1) etiket kabul ediyor | `OneVsRest` sarmalayıcı; Exp03'te `MultilayerPerceptronClassifier` alternatifi |
-| 2 | `RandomForest` 2M satırda Java Heap OOM | 150 ağaç × depth-10 bellek sınırını aşıyor | numTrees 150→50, maxDepth 10→6; Exp03 eğitim seti 600k örnekleme |
-| 3 | `spark.driver.memory` Python kodunda etkisiz | JVM başlamadan önce ayarlanması gerekiyor | `--driver-memory 4g` parametresi `spark-submit` komutuna eklendi |
-| 4 | Delta 3.3.2 — `SupportsNonDeterministicExpression` hatası | Sınıf Spark 3.5.2'de tanımlandı; konteyner 3.5.1 çalıştırıyor | Delta 3.1.0 (Spark 3.5.1 ile tam uyumlu sürüm) kullanıldı |
-| 5 | MLflow "Invalid Host header" 403 hatası | HTTP sunucusunun DNS rebinding koruması Spark konteynerinin isteğini reddediyor | HTTP izleme URI → `file:///app/mlruns` paylaşımlı volume çözümü |
-| 6 | Özellik vektöründe NaN değerler | GPS koordinatı eksik olan ~28.000 kayıt | `coalesce(lat_grid, lit(0.0))` + `.fillna(0)` vektör birleştirme öncesi |
-| 7 | `dashboard/` dizini Spark konteynerinde erişilemiyor | `docker-compose.yml` volume mount eksikliği | `./dashboard:/app/dashboard` bind mount eklendi |
-| 8 | Ivy cache izin hatası (`/home/spark/.ivy2`) | Spark imajında `spark` kullanıcısının yazma izni yok | Dockerfile'da `mkdir -p /home/spark/.ivy2 && chown -R spark:spark` eklendi |
-
----
-
-## 12. Değerlendirme Ölçütleri ve Rubrik Karşılaştırması
-
-| Değerlendirme Kriteri | Ağırlık | Durum | Detay |
-|---|---|---|---|
-| Docker & Altyapı | %15 | ✅ | `docker-compose.yml`, 6 servis Dockerfile, Kafka+Spark+Delta JARs build-time dahil |
-| Kafka Streaming | %15 | ✅ | Producer, 2M mesaj, 2.000 msg/sn, JSON format, synthetic_user_id |
-| Spark + Delta Lake | %15 | ✅ | Bronze/Silver/Gold, ACID, şema dönüşümü, streaming + batch |
-| EDA & Feature Engineering | %10 | ✅ | 14 özellik (min. 5), iş mantığı belgelenmiş, Delta'ya kaydedilmiş |
-| ML Modelleri & MLflow | %15 | ✅ | 5 model × 3 deney, AUC-ROC/F1/CM/Feature Importance, MLflow entegrasyonu |
-| Dashboard & Görselleştirme | %15 | ✅ | Streamlit 4 sekme, Plotly interaktif, 9+ zorunlu görsel, scatter harita |
-| Dokümantasyon & Sunum | %15 | ✅ | README, RUNBOOK, teknik rapor, akademik yazım |
-
----
-
-## 13. Sonuç
-
-Bu çalışmada, Chicago şehrine ait 2.000.000 suç kaydı üzerinde modern bir uçtan uca büyük veri pipeline'ı başarıyla hayata geçirilmiştir. Sistem, Apache Kafka aracılığıyla gerçek zamanlı veri akışı simüle etmekte; Spark Structured Streaming ile verileri Bronze, Silver ve Gold Delta katmanlarında işlemekte ve üç bağımsız makine öğrenmesi deneyi yürütmektedir.
-
-**Temel Bulgular:**
-
-1. **Tutuklama Tahmini (Exp01):** GBT algoritması AUC-ROC=0,859 ile en yüksek performansı sergilemiştir. Suç tipinin tahmin önem skorundaki %73,2'lik payı, narkotik ile mülk suçları arasındaki dramatik tutuklama oranı farkından kaynaklanmaktadır.
-
-2. **Suç Yoğunluğu Regresyonu (Exp02):** GBT regresör modeli R²=0,445 ile suç sayısı varyansının %44,5'ini açıklamış; RMSE=1,72 değeri devriye planlaması için yeterli hassasiyeti sağlamıştır. Chicago'nun en yüksek riskli noktası 41,88°K 87,63°B koordinatında tespit edilmiştir.
-
-3. **Müdahale Protokolü (Exp03):** Random Forest modeli, Illinois Zorunlu Tutuklama Yasası kapsamındaki Sınıf 3 vakalarının %70'ini doğru sınıflandırmayı başarmıştır; bu, sınıfın yalnızca verilerin %2,9'unu oluşturduğu göz önüne alındığında anlamlı bir başarıdır.
-
-Proje, teorik veri mühendisliği bilgisinin gerçek dünya veri seti ve endüstriyel standart araçlarla pratiğe dökülmesini başarıyla sergilemektedir.
+Çalışma, teorik veri mühendisliği bilgisinin endüstriyel standart araçlarla gerçek bir probleme uygulanmasını tüm süreç boyunca belgelemiş; karşılaşılan teknik güçlüklerin her biri çözümüyle birlikte kayıt altına alınmıştır. Bu raporun, gelecekteki benzer büyük veri projeleri için tekrarlanabilir bir referans kaynağı işlevi görmesi amaçlanmaktadır.
 
 ---
 
@@ -702,22 +722,23 @@ Proje, teorik veri mühendisliği bilgisinin gerçek dünya veri seti ve endüst
 
 1. Chicago Data Portal. *Crimes — 2001 to Present.* https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2 (Erişim: Mayıs 2026)
 
-2. Apache Software Foundation. *Apache Spark Documentation — Structured Streaming Programming Guide*, Sürüm 3.5.1. https://spark.apache.org/docs/3.5.1/structured-streaming-programming-guide.html
+2. Armbrust, M., Das, T., Torres, J., Yavuz, B., Zhu, S., Xin, R., ... & Zaharia, M. (2020). Delta lake: High-performance ACID table storage over cloud object stores. *Proceedings of the VLDB Endowment*, 13(12), 3411-3424.
 
-3. Delta.io. *Delta Lake Documentation*, Sürüm 3.1.0. https://docs.delta.io/3.1.0/
+3. Armbrust, M., Xin, R. S., Lian, C., Huai, Y., Liu, D., Bradley, J. K., ... & Zaharia, M. (2018). Structured streaming: A declarative API for real-time applications in Apache Spark. *Proceedings of ACM SIGMOD*, 601-613.
 
-4. Confluent Inc. *Apache Kafka Documentation*. https://kafka.apache.org/documentation/
+4. Kreps, J., Narkhede, N., & Rao, J. (2011). Kafka: A distributed messaging system for log processing. *Proceedings of the NetDB Workshop*, 1-7.
 
-5. MLflow. *MLflow Documentation — Tracking.* https://mlflow.org/docs/latest/tracking.html
+5. Meng, X., Bradley, J., Yavuz, B., Sparks, E., Venkataraman, S., Liu, D., ... & Zaharia, M. (2016). MLlib: Machine learning in Apache Spark. *Journal of Machine Learning Research*, 17(1), 1235-1241.
 
-6. Streamlit Inc. *Streamlit Documentation.* https://docs.streamlit.io/
+6. Zaharia, M., Xin, R. S., Wendell, P., Das, T., Armbrust, M., Dave, A., ... & Stoica, I. (2016). Apache Spark: A unified engine for big data processing. *Communications of the ACM*, 59(11), 56-65.
 
-7. Meng, X., Bradley, J., Yavuz, B., Sparks, E., Venkataraman, S., Liu, D., ... & Zaharia, M. (2016). MLlib: Machine learning in apache spark. *Journal of Machine Learning Research*, 17(1), 1235-1241.
+7. Lum, K., & Isaac, W. (2016). To predict and serve? *Significance*, 13(5), 14-19.
 
-8. Zaharia, M., Xin, R. S., Wendell, P., Das, T., Armbrust, M., Dave, A., ... & Stoica, I. (2016). Apache spark: A unified engine for big data processing. *Communications of the ACM*, 59(11), 56-65.
+8. Chen, A., Chow, A., Davidson, A., DCunha, A., Ghodsi, A., Hong, S. A., ... & Shankar, V. (2020). Developments in MLflow: A system to accelerate the machine learning lifecycle. *Proceedings of the DEEM Workshop*, 1-4.
+
+9. Chicago Police Department. (2026). *IUCR Codes and Crime Classification.* City of Chicago official documentation.
 
 ---
 
-*Teknik Rapor — Chicago Crime Big Data Pipeline Projesi*  
-*Büyük Veri Analizine Giriş, 2025-2026 Bahar Dönemi*  
-*13 Mayıs 2026*
+*Teknik Rapor — Chicago Crime Big Data Pipeline Projesi*
+*Büyük Veri Analizine Giriş, 2025-2026 Bahar Dönemi, 13 Mayıs 2026*

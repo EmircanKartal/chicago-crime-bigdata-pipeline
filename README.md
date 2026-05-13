@@ -307,10 +307,32 @@ Static HTML alternative: `open dashboard/index.html`
 
 ## 12. Team
 
-| | | |
-|:---:|:---:|:---:|
-| <a href="https://github.com/EmircanKartal"><img src="https://github.com/EmircanKartal.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/berfinm"><img src="https://github.com/berfinm.png" width="80" style="border-radius:50%"/></a> | <a href="https://github.com/kagangur"><img src="https://github.com/kagangur.png" width="80" style="border-radius:50%"/></a> |
-| **[Emircan Kartal](https://github.com/EmircanKartal)** | **[Meryem Berfin Kenar](https://github.com/berfinm)** | **[Kağan Gür](https://github.com/kagangur)** |
+<div align="center">
+<table width="100%">
+<tr>
+  <td width="33%" align="center">
+    <a href="https://github.com/EmircanKartal">
+      <img src="https://github.com/EmircanKartal.png" width="80" style="border-radius:50%"/>
+    </a>
+  </td>
+  <td width="33%" align="center">
+    <a href="https://github.com/berfinm">
+      <img src="https://github.com/berfinm.png" width="80" style="border-radius:50%"/>
+    </a>
+  </td>
+  <td width="33%" align="center">
+    <a href="https://github.com/kagangur">
+      <img src="https://github.com/kagangur.png" width="80" style="border-radius:50%"/>
+    </a>
+  </td>
+</tr>
+<tr>
+  <td width="33%" align="center"><strong><a href="https://github.com/EmircanKartal">Emircan Kartal</a></strong></td>
+  <td width="33%" align="center"><strong><a href="https://github.com/berfinm">Meryem Berfin Kenar</a></strong></td>
+  <td width="33%" align="center"><strong><a href="https://github.com/kagangur">Kağan Gür</a></strong></td>
+</tr>
+</table>
+</div>
 
 ---
 

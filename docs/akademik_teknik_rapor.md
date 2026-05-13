@@ -4,7 +4,7 @@
 ---
 
 **Ders:** Büyük Veri Analizine Giriş  
-**Danışman:** Dr. Ayşe Gül Eker  
+**Danışman:** Asst. Prof. Ayşe Gül Eker  
 **Dönem:** 2025-2026 Bahar  
 **Teslim Tarihi:** 13 Mayıs 2026  
 
@@ -15,8 +15,6 @@
 
 **Veri Seti:** Chicago Crime Data (Chicago Open Data — ~7,9M kayıt)  
 **Kullanılan Kayıt Sayısı:** 2.000.000  
-**GitHub:** chicago-crime-bigdata-pipeline  
-
 ---
 
 ## Özet

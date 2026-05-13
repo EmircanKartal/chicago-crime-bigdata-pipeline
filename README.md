@@ -55,8 +55,8 @@ End-to-end big data pipeline on **2,000,000 Chicago Crime records** covering the
 | Feature Engineering | Spark MLlib | 14 ML-ready features, no data leakage |
 | ML Experiment 1 | Spark MLlib + MLflow | **Arrest prediction** — GBT AUC-ROC = 0.859 |
 | ML Experiment 2 | Spark MLlib + MLflow | **Crime density regression** — GBT R² = 0.445 |
-| ML Experiment 3 | Spark MLlib + MLflow | **Dispatch protocol 4-class** — DT F1 = 0.671 |
-| Dashboard | Streamlit + Plotly | 4-tab interactive dashboard with patrol heatmap |
+| ML Experiment 3 | Spark MLlib + MLflow | **Dispatch protocol 4-class** — RF F1 = 0.682, Class 3 Recall = 70% |
+| Dashboard | Streamlit + Plotly | 4-tab interactive dashboard — all charts live from 2M rows, patrol scatter_mapbox |
 
 ---
 
@@ -260,18 +260,21 @@ Output: `reports/exp02_density/heatmap_data.csv` — 737 grid cells with predict
 
 **Real-world motivation:** Illinois Mandatory Arrest Law requires arrest when probable cause exists in domestic incidents. Predicting Class 3 before dispatch ensures the right team arrives first.
 
-| Model | F1 | Recall Class 3 |
-|---|---|---|
-| **DecisionTree** 🏆 | **0.671** | **0.612** |
-| LogisticRegression | 0.617 | 0.630 |
+| Model | F1 | Accuracy | Recall Class 3 |
+|---|---|---|---|
+| **RandomForest** 🏆 | **0.682** | **64.2%** | **70.0%** |
+| DecisionTree | 0.661 | 61.8% | 63.0% |
+| LogisticRegression | 0.616 | 57.2% | 64.2% |
+| MLP | 0.549 | 67.5% | 0.0% |
+| NaiveBayes | 0.500 | 47.7% | 0.0% |
 
-Class weights applied: Class 3 receives **8.5× weight** to improve recall on the rarest, most critical case.
+Class weights applied: Class 3 receives **8.5× weight**. RandomForest achieves **70% recall on Class 3** — correctly identifies 70% of mandatory-arrest domestic incidents.
 
 ---
 
 ## 10. Dashboard
 
-Interactive Streamlit dashboard — `dashboard/streamlit_app.py`
+Interactive Streamlit dashboard built with Plotly — all charts generated live from real data, no static PNGs.
 
 ```bash
 source .venv/bin/activate
@@ -279,14 +282,22 @@ streamlit run dashboard/streamlit_app.py
 # → http://localhost:8501
 ```
 
-| Tab | Content |
-|---|---|
-| 📊 EDA | Hourly/daily time series, top-10 crime types, arrest rate pie, day×hour heatmap |
-| 🤖 ML — Sınıflandırma | 5-model grouped bar, feature importance, confusion matrix, ROC curve |
-| 📈 ML — Regresyon | R²/RMSE/MAE comparison for 5 regressors |
-| 🗺️ Patrol Heatmap | Interactive Plotly scatter_mapbox, top-20 hotspot bars, risk threshold slider |
+**MLflow experiment tracking:**
+```bash
+open http://localhost:5001
+# Exp01: http://localhost:5001/#/experiments/415036514690670316/evaluation-runs
+# Exp02: http://localhost:5001/#/experiments/697634395395337699/evaluation-runs
+# Exp03: http://localhost:5001/#/experiments/480956894876426590/evaluation-runs
+```
 
-Static HTML alternative: `open dashboard/index.html`
+| Tab | Charts |
+|---|---|
+| **EDA — Exploratory Analysis** | Hourly area chart (2M rows), day-of-week bar, monthly trend, top-10 crime types, arrest rate donut, arrest-rate-by-type bar, day×hour heatmap, Chicago crime location scatter map |
+| **Exp01 — Arrest Classification** | 5-model grouped bar (5 metrics), AUC-ROC ranking, recall-arrested comparison, ROC curve (all 5 models), confusion matrix heatmap, feature importance — best model banner in blue |
+| **Exp02 — Crime Density Regression** | RMSE/MAE/R² triple panel, residual histogram, actual-vs-predicted scatter, **interactive Chicago patrol scatter_mapbox**, top-20 priority patrol zones |
+| **Exp03 — Dispatch Protocol** | 5-model comparison, per-class recall grouped bar (Class 3 highlighted), class distribution pie, F1 ranking, 4×4 confusion matrix, feature importance |
+
+Each experiment tab opens with a Turkish scenario card explaining the real-world problem, target variable and business value, plus a direct MLflow link button.
 
 ---
 
